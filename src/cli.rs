@@ -20,11 +20,8 @@ pub enum Commands {
     #[command(about = "List active sessions")]
     List,
 
-    #[command(about = "Attach to a tmux session")]
-    Attach {
-        #[arg(help = "Session name to attach to")]
-        session: String,
-    },
+    #[command(about = "Attach to the pleb tmux session")]
+    Attach,
 
     #[command(about = "Manage configuration")]
     Config {

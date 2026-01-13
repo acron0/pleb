@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod github;
+mod tmux;
 mod worktree;
 
 use anyhow::{Context, Result};
@@ -10,6 +11,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use cli::{Cli, Commands, ConfigAction};
 use config::Config;
+use tmux::TmuxManager;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -94,10 +96,33 @@ async fn handle_command(command: Commands, config: Config) -> Result<()> {
             println!("Not yet implemented: watch");
         }
         Commands::List => {
-            println!("Not yet implemented: list");
+            let tmux_manager = TmuxManager::new(&config.tmux);
+            let issue_numbers = tmux_manager.list_windows().await.context("Failed to list issue windows")?;
+
+            if issue_numbers.is_empty() {
+                println!("No active issue windows in session '{}'", config.tmux.session_name);
+            } else {
+                println!("Active issue windows in session '{}':", config.tmux.session_name);
+                for issue_number in issue_numbers {
+                    println!("  - issue-{}", issue_number);
+                }
+            }
         }
-        Commands::Attach { session } => {
-            println!("Not yet implemented: attach {}", session);
+        Commands::Attach => {
+            let tmux_manager = TmuxManager::new(&config.tmux);
+
+            // Ensure the session exists before attaching
+            tmux_manager.ensure_session().await.context("Failed to ensure tmux session exists")?;
+
+            // Get the attach command and execute it
+            // This will replace the current process with tmux attach
+            let status = tmux_manager.attach_command()
+                .status()
+                .context("Failed to attach to tmux session")?;
+
+            if !status.success() {
+                anyhow::bail!("Failed to attach to session '{}'", config.tmux.session_name);
+            }
         }
         Commands::Config { .. } => {
             // Already handled above, shouldn't reach here

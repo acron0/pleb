@@ -62,3 +62,8 @@ planning_done = "planning_done.md"
 # How often (in seconds) to poll GitHub for new issues
 # Lower values = faster response, but more API calls
 poll_interval_secs = 5
+
+[tmux]
+# Name of the tmux session where all issue windows will live
+# All issues run in windows within this single session
+session_name = "pleb"

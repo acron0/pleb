@@ -10,6 +10,7 @@ pub struct Config {
     pub paths: PathConfig,
     pub prompts: PromptsConfig,
     pub watch: WatchConfig,
+    pub tmux: TmuxConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -121,6 +122,16 @@ fn default_prompt_planning_done() -> String {
 
 fn default_poll_interval_secs() -> u64 {
     5
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TmuxConfig {
+    #[serde(default = "default_session_name")]
+    pub session_name: String,
+}
+
+fn default_session_name() -> String {
+    "pleb".to_string()
 }
 
 impl Config {
