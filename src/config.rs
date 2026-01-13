@@ -40,12 +40,12 @@ pub struct ClaudeConfig {
     pub command: String,
     #[serde(default = "default_claude_args")]
     pub args: Vec<String>,
-    #[serde(default = "default_planning_mode")]
-    pub planning_mode: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PathConfig {
+    #[serde(default = "default_repo_dir")]
+    pub repo_dir: PathBuf,
     #[serde(default = "default_worktree_base")]
     pub worktree_base: PathBuf,
 }
@@ -99,8 +99,8 @@ fn default_claude_args() -> Vec<String> {
     vec!["--dangerously-skip-permissions".to_string()]
 }
 
-fn default_planning_mode() -> bool {
-    true
+fn default_repo_dir() -> PathBuf {
+    PathBuf::from("./repo")
 }
 
 fn default_worktree_base() -> PathBuf {
@@ -173,6 +173,14 @@ impl Config {
                     label1
                 );
             }
+        }
+
+        // Warn if repo_dir doesn't exist (will be cloned later)
+        if !self.paths.repo_dir.exists() {
+            tracing::warn!(
+                "Repo directory does not exist: {} (it will be cloned when needed)",
+                self.paths.repo_dir.display()
+            );
         }
 
         // Warn if worktree_base doesn't exist (will be created later)

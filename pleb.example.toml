@@ -36,10 +36,11 @@ command = "claude"
 # --dangerously-skip-permissions allows Claude to run without interactive prompts
 args = ["--dangerously-skip-permissions"]
 
-# Start Claude in planning mode (recommended for issue-driven work)
-planning_mode = true
-
 [paths]
+# Directory where the main repo clone lives
+# Pleb will clone the repo here if it doesn't exist
+repo_dir = "./repo"
+
 # Base directory for git worktrees
 # Each issue will get its own worktree under this directory
 worktree_base = "./worktrees"
