@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use octocrab::Octocrab;
 
-use crate::config::GithubConfig;
+use crate::config::{GithubConfig, LabelConfig};
 
 #[derive(Debug, Clone)]
 pub struct Issue {
@@ -17,6 +17,15 @@ pub struct Issue {
 pub enum IssueState {
     Open,
     Closed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PlebState {
+    Ready,
+    Provisioning,
+    Waiting,
+    Working,
+    Done,
 }
 
 impl From<octocrab::models::issues::Issue> for Issue {
@@ -151,5 +160,150 @@ impl GitHubClient {
         );
 
         Ok(Issue::from(issue))
+    }
+
+    /// Add a label to an issue
+    pub async fn add_label(&self, issue_number: u64, label: &str) -> Result<()> {
+        self.client
+            .issues(&self.owner, &self.repo)
+            .add_labels(issue_number, &[label.to_string()])
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to add label '{}' to issue #{} in {}/{}",
+                    label, issue_number, self.owner, self.repo
+                )
+            })?;
+
+        tracing::debug!(
+            "Added label '{}' to issue #{} in {}/{}",
+            label,
+            issue_number,
+            self.owner,
+            self.repo
+        );
+
+        Ok(())
+    }
+
+    /// Remove a label from an issue
+    pub async fn remove_label(&self, issue_number: u64, label: &str) -> Result<()> {
+        // Attempt to remove the label, but don't fail if it doesn't exist
+        match self
+            .client
+            .issues(&self.owner, &self.repo)
+            .remove_label(issue_number, label)
+            .await
+        {
+            Ok(_) => {
+                tracing::debug!(
+                    "Removed label '{}' from issue #{} in {}/{}",
+                    label,
+                    issue_number,
+                    self.owner,
+                    self.repo
+                );
+                Ok(())
+            }
+            Err(e) => {
+                // Check if error is "label not found" (404) - this is not an error for us
+                if e.to_string().contains("404") {
+                    tracing::debug!(
+                        "Label '{}' not found on issue #{} (already removed or never existed)",
+                        label,
+                        issue_number
+                    );
+                    Ok(())
+                } else {
+                    Err(e).with_context(|| {
+                        format!(
+                            "Failed to remove label '{}' from issue #{} in {}/{}",
+                            label, issue_number, self.owner, self.repo
+                        )
+                    })
+                }
+            }
+        }
+    }
+
+    /// Replace one label with another (atomic state transition)
+    pub async fn replace_label(
+        &self,
+        issue_number: u64,
+        old_label: &str,
+        new_label: &str,
+    ) -> Result<()> {
+        // Remove old label (ignore if it doesn't exist)
+        self.remove_label(issue_number, old_label).await?;
+
+        // Add new label
+        self.add_label(issue_number, new_label).await?;
+
+        tracing::debug!(
+            "Replaced label '{}' with '{}' on issue #{} in {}/{}",
+            old_label,
+            new_label,
+            issue_number,
+            self.owner,
+            self.repo
+        );
+
+        Ok(())
+    }
+
+    /// Transition an issue from one pleb state to another
+    pub async fn transition_state(
+        &self,
+        issue_number: u64,
+        from: PlebState,
+        to: PlebState,
+        labels_config: &LabelConfig,
+    ) -> Result<()> {
+        let old_label = self.state_to_label(from, labels_config);
+        let new_label = self.state_to_label(to, labels_config);
+
+        self.replace_label(issue_number, &old_label, &new_label)
+            .await?;
+
+        tracing::info!(
+            "Transitioned issue #{} from {:?} to {:?}",
+            issue_number,
+            from,
+            to
+        );
+
+        Ok(())
+    }
+
+    /// Convert a PlebState to the corresponding label string from config
+    fn state_to_label(&self, state: PlebState, config: &LabelConfig) -> String {
+        match state {
+            PlebState::Ready => config.ready.clone(),
+            PlebState::Provisioning => config.provisioning.clone(),
+            PlebState::Waiting => config.waiting.clone(),
+            PlebState::Working => config.working.clone(),
+            PlebState::Done => config.done.clone(),
+        }
+    }
+
+    /// Determine current pleb state from issue labels
+    pub fn get_pleb_state(&self, issue: &Issue, labels_config: &LabelConfig) -> Option<PlebState> {
+        // Check which pleb label the issue has
+        for label in &issue.labels {
+            if label == &labels_config.ready {
+                return Some(PlebState::Ready);
+            } else if label == &labels_config.provisioning {
+                return Some(PlebState::Provisioning);
+            } else if label == &labels_config.waiting {
+                return Some(PlebState::Waiting);
+            } else if label == &labels_config.working {
+                return Some(PlebState::Working);
+            } else if label == &labels_config.done {
+                return Some(PlebState::Done);
+            }
+        }
+
+        // No pleb label found
+        None
     }
 }
