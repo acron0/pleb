@@ -30,7 +30,7 @@ Plans:
 
 Plans:
 - [x] 02-01: GitHub API client with auth (PAT or GitHub App)
-- [ ] 02-02: Issue watching (polling loop, label filtering)
+- [x] 02-02: Issue watching (polling loop, label filtering)
 - [ ] 02-03: Label management (add/remove labels on issues)
 
 ### Phase 3: Session Management
@@ -67,7 +67,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 2/2 | Complete | 2026-01-13 |
-| 2. GitHub Integration | 1/3 | In progress | - |
+| 2. GitHub Integration | 2/3 | In progress | - |
 | 3. Session Management | 0/2 | Not started | - |
 | 4. Orchestration | 0/4 | Not started | - |
 | 5. Hooks & Skills | 0/2 | Not started | - |
