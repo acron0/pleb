@@ -17,11 +17,11 @@ Build an issue-driven Claude Code orchestrator that watches GitHub for labeled i
 ### Phase 1: Foundation
 **Goal**: Bootable Rust project with config parsing and CLI structure
 **Depends on**: Nothing (first phase)
-**Plans**: TBD after planning
+**Status**: Complete
 
 Plans:
 - [x] 01-01: Rust project scaffold, dependencies, basic CLI
-- [ ] 01-02: Config system (TOML/YAML for repo, labels, claude flags)
+- [x] 01-02: Config system (TOML/YAML for repo, labels, claude flags)
 
 ### Phase 2: GitHub Integration
 **Goal**: Can watch a repo for issues with specific labels and modify labels
@@ -65,7 +65,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 1/2 | In progress | - |
+| 1. Foundation | 2/2 | Complete | 2026-01-13 |
 | 2. GitHub Integration | 0/3 | Not started | - |
 | 3. Session Management | 0/2 | Not started | - |
 | 4. Orchestration | 0/3 | Not started | - |
