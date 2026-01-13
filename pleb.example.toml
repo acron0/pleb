@@ -43,3 +43,21 @@ planning_mode = true
 # Base directory for git worktrees
 # Each issue will get its own worktree under this directory
 worktree_base = "./worktrees"
+
+[prompts]
+# Directory containing prompt template files
+# Pleb will look for prompt files in this directory
+dir = "./prompts"
+
+# Prompt template file for new issues
+# This prompt is used when Claude starts working on a fresh issue
+new_issue = "new_issue.md"
+
+# Prompt template file for when planning is complete
+# This prompt is used when transitioning from planning to implementation
+planning_done = "planning_done.md"
+
+[watch]
+# How often (in seconds) to poll GitHub for new issues
+# Lower values = faster response, but more API calls
+poll_interval_secs = 5

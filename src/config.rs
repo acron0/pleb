@@ -8,6 +8,8 @@ pub struct Config {
     pub labels: LabelConfig,
     pub claude: ClaudeConfig,
     pub paths: PathConfig,
+    pub prompts: PromptsConfig,
+    pub watch: WatchConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -46,6 +48,22 @@ pub struct ClaudeConfig {
 pub struct PathConfig {
     #[serde(default = "default_worktree_base")]
     pub worktree_base: PathBuf,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PromptsConfig {
+    #[serde(default = "default_prompts_dir")]
+    pub dir: PathBuf,
+    #[serde(default = "default_prompt_new_issue")]
+    pub new_issue: String,
+    #[serde(default = "default_prompt_planning_done")]
+    pub planning_done: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct WatchConfig {
+    #[serde(default = "default_poll_interval_secs")]
+    pub poll_interval_secs: u64,
 }
 
 // Default value functions
@@ -87,6 +105,22 @@ fn default_planning_mode() -> bool {
 
 fn default_worktree_base() -> PathBuf {
     PathBuf::from("./worktrees")
+}
+
+fn default_prompts_dir() -> PathBuf {
+    PathBuf::from("./prompts")
+}
+
+fn default_prompt_new_issue() -> String {
+    "new_issue.md".to_string()
+}
+
+fn default_prompt_planning_done() -> String {
+    "planning_done.md".to_string()
+}
+
+fn default_poll_interval_secs() -> u64 {
+    5
 }
 
 impl Config {
@@ -148,6 +182,30 @@ impl Config {
                 self.paths.worktree_base.display()
             );
         }
+
+        // Validate prompts config
+        anyhow::ensure!(
+            !self.prompts.new_issue.is_empty(),
+            "prompts.new_issue must not be empty"
+        );
+        anyhow::ensure!(
+            !self.prompts.planning_done.is_empty(),
+            "prompts.planning_done must not be empty"
+        );
+
+        // Warn if prompts directory doesn't exist
+        if !self.prompts.dir.exists() {
+            tracing::warn!(
+                "Prompts directory does not exist: {} (prompt files should be created here)",
+                self.prompts.dir.display()
+            );
+        }
+
+        // Validate watch config
+        anyhow::ensure!(
+            self.watch.poll_interval_secs > 0,
+            "watch.poll_interval_secs must be greater than 0"
+        );
 
         Ok(())
     }

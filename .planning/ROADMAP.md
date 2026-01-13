@@ -26,10 +26,10 @@ Plans:
 ### Phase 2: GitHub Integration
 **Goal**: Can watch a repo for issues with specific labels and modify labels
 **Depends on**: Phase 1 (needs config)
-**Plans**: TBD after planning
+**Status**: In progress
 
 Plans:
-- [ ] 02-01: GitHub API client with auth (PAT or GitHub App)
+- [x] 02-01: GitHub API client with auth (PAT or GitHub App)
 - [ ] 02-02: Issue watching (polling loop, label filtering)
 - [ ] 02-03: Label management (add/remove labels on issues)
 
@@ -67,7 +67,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 2/2 | Complete | 2026-01-13 |
-| 2. GitHub Integration | 0/3 | Not started | - |
+| 2. GitHub Integration | 1/3 | In progress | - |
 | 3. Session Management | 0/2 | Not started | - |
 | 4. Orchestration | 0/4 | Not started | - |
 | 5. Hooks & Skills | 0/2 | Not started | - |
