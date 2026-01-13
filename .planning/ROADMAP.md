@@ -6,7 +6,7 @@ Build an issue-driven Claude Code orchestrator that watches GitHub for labeled i
 
 ## Phases
 
-- [ ] **Phase 1: Foundation** - Rust project, config system, CLI interface
+- [x] **Phase 1: Foundation** - Rust project, config system, CLI interface
 - [ ] **Phase 2: GitHub Integration** - Issue watching, label management, API client
 - [ ] **Phase 3: Session Management** - Git worktree + tmux provisioning
 - [ ] **Phase 4: Orchestration** - Main daemon loop, state machine
@@ -49,8 +49,9 @@ Plans:
 
 Plans:
 - [ ] 04-01: State machine (ready → provisioning → waiting → working)
-- [ ] 04-02: Main daemon loop (watch → provision → invoke → manage)
-- [ ] 04-03: Claude Code invocation with issue as prompt
+- [ ] 04-02: Prompt template system (prompts/ dir, Handlebars templating, config for prompt paths)
+- [ ] 04-03: Main daemon loop (watch → provision → invoke → manage)
+- [ ] 04-04: Claude Code invocation with issue as prompt
 
 ### Phase 5: Hooks & Skills
 **Goal**: Integration points for Claude Code state transitions and convenience commands
@@ -68,5 +69,5 @@ Plans:
 | 1. Foundation | 2/2 | Complete | 2026-01-13 |
 | 2. GitHub Integration | 0/3 | Not started | - |
 | 3. Session Management | 0/2 | Not started | - |
-| 4. Orchestration | 0/3 | Not started | - |
+| 4. Orchestration | 0/4 | Not started | - |
 | 5. Hooks & Skills | 0/2 | Not started | - |
