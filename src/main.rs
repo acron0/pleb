@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod github;
+mod worktree;
 
 use anyhow::{Context, Result};
 use clap::Parser;

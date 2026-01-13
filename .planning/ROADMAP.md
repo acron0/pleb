@@ -36,10 +36,10 @@ Plans:
 ### Phase 3: Session Management
 **Goal**: Can create worktrees and tmux sessions, list active sessions
 **Depends on**: Phase 1 (needs config for paths)
-**Plans**: TBD after planning
+**Status**: In progress
 
 Plans:
-- [ ] 03-01: Git worktree creation/cleanup
+- [x] 03-01: Git worktree creation/cleanup
 - [ ] 03-02: Tmux session management (create, attach, list)
 
 ### Phase 4: Orchestration
@@ -68,6 +68,6 @@ Plans:
 |-------|----------------|--------|-----------|
 | 1. Foundation | 2/2 | Complete | 2026-01-13 |
 | 2. GitHub Integration | 3/3 | Complete | 2026-01-13 |
-| 3. Session Management | 0/2 | Not started | - |
+| 3. Session Management | 1/2 | In progress | - |
 | 4. Orchestration | 0/4 | Not started | - |
 | 5. Hooks & Skills | 0/2 | Not started | - |
