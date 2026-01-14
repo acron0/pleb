@@ -19,20 +19,66 @@ impl WorktreeManager {
         }
     }
 
-    /// Create a worktree for an issue
+    /// Create a worktree for an issue (idempotent)
     /// Creates branch `pleb/issue-{number}` and worktree at `worktree_base/issue-{number}`
+    /// Handles edge cases: orphaned directories, stale git tracking, existing branches
     pub async fn create_worktree(&self, issue_number: u64) -> Result<PathBuf> {
         let worktree_path = self.worktree_base.join(format!("issue-{}", issue_number));
         let branch_name = format!("pleb/issue-{}", issue_number);
 
-        // 1. Check if worktree already exists, return path if so
-        if worktree_path.exists() {
-            tracing::debug!(
-                "Worktree for issue #{} already exists at {}",
-                issue_number,
-                worktree_path.display()
-            );
-            return Ok(worktree_path);
+        // 1. Check git's worktree tracking (not just filesystem)
+        let is_registered = self.is_worktree_registered(issue_number).await?;
+        let path_exists = worktree_path.exists();
+
+        match (is_registered, path_exists) {
+            // Already exists and registered - return it
+            (true, true) => {
+                tracing::debug!(
+                    "Worktree for issue #{} already exists at {}",
+                    issue_number,
+                    worktree_path.display()
+                );
+                return Ok(worktree_path);
+            }
+            // Registered but path missing - clean up stale git tracking
+            (true, false) => {
+                tracing::debug!(
+                    "Cleaning up stale worktree registration for issue #{}",
+                    issue_number
+                );
+                let _ = Command::new("git")
+                    .arg("-C")
+                    .arg(&self.repo_dir)
+                    .arg("worktree")
+                    .arg("remove")
+                    .arg(&worktree_path)
+                    .arg("--force")
+                    .output()
+                    .await;
+                // Also prune to clean up
+                let _ = Command::new("git")
+                    .arg("-C")
+                    .arg(&self.repo_dir)
+                    .arg("worktree")
+                    .arg("prune")
+                    .output()
+                    .await;
+            }
+            // Not registered but path exists - remove orphaned directory
+            (false, true) => {
+                tracing::debug!(
+                    "Removing orphaned worktree directory for issue #{}",
+                    issue_number
+                );
+                tokio::fs::remove_dir_all(&worktree_path).await.with_context(|| {
+                    format!(
+                        "Failed to remove orphaned worktree directory: {}",
+                        worktree_path.display()
+                    )
+                })?;
+            }
+            // Neither - fresh create
+            (false, false) => {}
         }
 
         // 2. Create branch from main/master: git branch pleb/issue-{number}
@@ -256,6 +302,12 @@ impl WorktreeManager {
 
         // 4. Return list of issue numbers
         Ok(issue_numbers)
+    }
+
+    /// Check if a worktree for an issue is registered with git
+    async fn is_worktree_registered(&self, issue_number: u64) -> Result<bool> {
+        let worktrees = self.list_worktrees().await?;
+        Ok(worktrees.contains(&issue_number))
     }
 
     /// Check if repo_dir exists and is a git repo, clone if needed
