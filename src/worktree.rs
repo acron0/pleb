@@ -271,7 +271,7 @@ impl WorktreeManager {
             return Ok(());
         }
 
-        // 2. Otherwise, clone: git clone https://github.com/{owner}/{repo} {repo_dir}
+        // 2. Otherwise, clone: git clone git@github.com:{owner}/{repo}.git {repo_dir}
         tracing::info!(
             "Cloning repository {}/{} to {}",
             owner,
@@ -289,7 +289,7 @@ impl WorktreeManager {
             })?;
         }
 
-        let clone_url = format!("https://github.com/{}/{}", owner, repo);
+        let clone_url = format!("git@github.com:{}/{}.git", owner, repo);
         let clone_output = Command::new("git")
             .arg("clone")
             .arg(&clone_url)

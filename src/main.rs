@@ -19,7 +19,7 @@ use github::GitHubClient;
 use worktree::WorktreeManager;
 use claude::ClaudeRunner;
 use templates::{TemplateEngine, IssueContext};
-use state::{IssueTracker, PlebState};
+use state::PlebState;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -98,13 +98,13 @@ fn load_config(path: &str) -> Result<Config> {
 }
 
 /// Orchestrator that manages the main daemon loop
+/// State is derived from GitHub labels - no in-memory tracking needed
 struct Orchestrator {
     github: GitHubClient,
     worktree: WorktreeManager,
     tmux: TmuxManager,
     claude: ClaudeRunner,
     templates: TemplateEngine,
-    tracker: IssueTracker,
     config: Config,
 }
 
@@ -115,7 +115,6 @@ impl Orchestrator {
         let tmux = TmuxManager::new(&config.tmux);
         let claude = ClaudeRunner::new(&config.claude, &config.tmux);
         let templates = TemplateEngine::new(&config.prompts)?;
-        let tracker = IssueTracker::new();
 
         Ok(Self {
             github,
@@ -123,7 +122,6 @@ impl Orchestrator {
             tmux,
             claude,
             templates,
-            tracker,
             config,
         })
     }
@@ -153,19 +151,27 @@ impl Orchestrator {
         // Enter polling loop
         let poll_interval = std::time::Duration::from_secs(self.config.watch.poll_interval_secs);
 
+        // Create ctrl_c future once, outside the loop
+        let ctrl_c = tokio::signal::ctrl_c();
+        tokio::pin!(ctrl_c);
+
         loop {
-            // Check for Ctrl+C signal
             tokio::select! {
-                _ = tokio::signal::ctrl_c() => {
+                biased;
+
+                _ = &mut ctrl_c => {
                     tracing::info!("Shutting down...");
                     break;
                 }
-                _ = self.poll_cycle() => {
+                _ = async {
+                    if let Err(e) = self.poll_cycle().await {
+                        tracing::error!("Poll cycle error: {}", e);
+                    }
+                    tokio::time::sleep(poll_interval).await;
+                } => {
                     // Continue to next cycle
                 }
             }
-
-            tokio::time::sleep(poll_interval).await;
         }
 
         Ok(())
@@ -196,12 +202,12 @@ impl Orchestrator {
             return Ok(());
         }
 
-        // Process each new issue not in tracker
+        // Process each issue that doesn't already have a tmux window
         let mut processed_count = 0;
         for issue in issues {
-            if self.tracker.get(issue.number).is_some() {
-                // Already being tracked, skip
-                tracing::debug!("Skipping issue #{} (already being tracked)", issue.number);
+            // Check if tmux window already exists (idempotent check)
+            if self.tmux.window_exists(issue.number).await? {
+                tracing::debug!("Skipping issue #{} (tmux window already exists)", issue.number);
                 continue;
             }
 
@@ -259,12 +265,6 @@ impl Orchestrator {
                 &self.config.labels,
             )
             .await?;
-
-        // Track issue in IssueTracker with Working state
-        self.tracker.track(issue.number, PlebState::Working);
-        if let Err(e) = self.tracker.set_worktree_path(issue.number, worktree_path) {
-            tracing::warn!("Failed to set worktree path for issue #{}: {}", issue.number, e);
-        }
 
         tracing::info!(
             "Successfully provisioned issue #{}: {}",

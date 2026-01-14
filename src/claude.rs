@@ -27,32 +27,52 @@ impl ClaudeRunner {
     /// Claude starts in interactive mode so user can attach and interact
     #[allow(dead_code)]
     pub async fn invoke(&self, issue_number: u64, prompt: &str) -> Result<()> {
-        // Write prompt to a temp file to avoid shell escaping issues
+        let window_name = format!("issue-{}", issue_number);
+        let session_name = self.tmux.session_name();
+        let target = format!("{}:{}", session_name, window_name);
+
+        // Write prompt to a temp file
         let temp_file = format!("/tmp/pleb-prompt-{}.md", issue_number);
         std::fs::write(&temp_file, prompt)
             .with_context(|| format!("Failed to write prompt to temp file: {}", temp_file))?;
 
-        // Construct the claude command
-        // Format: cat {temp_file} | {command} {args...}
-        // Using cat pipe keeps Claude in interactive mode (no --print)
-        let mut cmd_parts = vec![
-            "cat".to_string(),
-            temp_file.clone(),
-            "|".to_string(),
-            self.command.clone(),
-        ];
+        // Build claude command
+        let mut cmd_parts = vec![self.command.clone()];
         cmd_parts.extend(self.args.iter().cloned());
-
-        let full_command = cmd_parts.join(" ");
+        let claude_command = cmd_parts.join(" ");
 
         tracing::info!(
             "Invoking Claude Code for issue #{} with command: {}",
             issue_number,
-            full_command
+            claude_command
         );
 
-        // Send the command to the tmux window
-        self.tmux.send_keys(issue_number, &full_command).await?;
+        // Step 1: Load prompt into tmux buffer
+        Command::new("tmux")
+            .args(["load-buffer", &temp_file])
+            .status()
+            .await
+            .context("Failed to load prompt into tmux buffer")?;
+
+        // Step 2: Start Claude (interactive mode, no piping)
+        self.tmux.send_keys(issue_number, &claude_command).await?;
+
+        // Step 3: Wait for Claude to initialize
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+        // Step 4: Paste the prompt from buffer
+        Command::new("tmux")
+            .args(["paste-buffer", "-t", &target])
+            .status()
+            .await
+            .context("Failed to paste prompt buffer")?;
+
+        // Step 5: Send Enter to submit the prompt
+        Command::new("tmux")
+            .args(["send-keys", "-t", &target, "Enter"])
+            .status()
+            .await
+            .context("Failed to send Enter key")?;
 
         Ok(())
     }

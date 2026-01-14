@@ -1,2 +1,9 @@
 #!/bin/bash
+
+# Load .env if it exists in the same directory as script
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    export $(grep -v '^#' "$SCRIPT_DIR/.env" | xargs)
+fi
+
 exec /home/acron/projects/kikin/pleb/target/release/pleb "$@"
