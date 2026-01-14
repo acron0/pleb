@@ -1,0 +1,265 @@
+use anyhow::{Context, Result};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::time::Instant;
+
+/// Represents the lifecycle state of an issue being managed by pleb
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PlebState {
+    Ready,
+    Provisioning,
+    Waiting,
+    Working,
+    Done,
+}
+
+impl PlebState {
+    /// Returns the valid next states from the current state
+    pub fn valid_transitions(&self) -> Vec<PlebState> {
+        match self {
+            PlebState::Ready => vec![PlebState::Provisioning],
+            PlebState::Provisioning => vec![PlebState::Waiting, PlebState::Working],
+            PlebState::Waiting => vec![PlebState::Working],
+            PlebState::Working => vec![PlebState::Waiting, PlebState::Done],
+            PlebState::Done => vec![], // Terminal state
+        }
+    }
+
+    /// Returns true if this is a terminal state (no valid transitions)
+    pub fn is_terminal(&self) -> bool {
+        self.valid_transitions().is_empty()
+    }
+}
+
+/// Represents a single tracked issue with its current state and metadata
+#[derive(Debug, Clone)]
+pub struct TrackedIssue {
+    pub issue_number: u64,
+    pub state: PlebState,
+    pub worktree_path: Option<PathBuf>,
+    pub started_at: Instant,
+    pub last_updated: Instant,
+}
+
+/// Manages the state of all issues being tracked by pleb
+#[derive(Debug)]
+pub struct IssueTracker {
+    tracked: HashMap<u64, TrackedIssue>,
+}
+
+impl IssueTracker {
+    /// Create a new empty issue tracker
+    pub fn new() -> Self {
+        Self {
+            tracked: HashMap::new(),
+        }
+    }
+
+    /// Start tracking an issue with the given state
+    pub fn track(&mut self, issue_number: u64, state: PlebState) {
+        let now = Instant::now();
+        let tracked_issue = TrackedIssue {
+            issue_number,
+            state,
+            worktree_path: None,
+            started_at: now,
+            last_updated: now,
+        };
+        self.tracked.insert(issue_number, tracked_issue);
+    }
+
+    /// Stop tracking an issue
+    pub fn untrack(&mut self, issue_number: u64) -> Option<TrackedIssue> {
+        self.tracked.remove(&issue_number)
+    }
+
+    /// Get a tracked issue by number
+    pub fn get(&self, issue_number: u64) -> Option<&TrackedIssue> {
+        self.tracked.get(&issue_number)
+    }
+
+    /// Get a mutable reference to a tracked issue by number
+    pub fn get_mut(&mut self, issue_number: u64) -> Option<&mut TrackedIssue> {
+        self.tracked.get_mut(&issue_number)
+    }
+
+    /// Get all issues in a specific state
+    pub fn get_by_state(&self, state: PlebState) -> Vec<&TrackedIssue> {
+        self.tracked
+            .values()
+            .filter(|issue| issue.state == state)
+            .collect()
+    }
+
+    /// Update the state of a tracked issue
+    pub fn update_state(&mut self, issue_number: u64, new_state: PlebState) -> Result<()> {
+        let issue = self.tracked.get_mut(&issue_number).with_context(|| {
+            format!("Issue #{} is not being tracked", issue_number)
+        })?;
+
+        issue.state = new_state;
+        issue.last_updated = Instant::now();
+        Ok(())
+    }
+
+    /// Set the worktree path for a tracked issue
+    pub fn set_worktree_path(&mut self, issue_number: u64, path: PathBuf) -> Result<()> {
+        let issue = self.tracked.get_mut(&issue_number).with_context(|| {
+            format!("Issue #{} is not being tracked", issue_number)
+        })?;
+
+        issue.worktree_path = Some(path);
+        issue.last_updated = Instant::now();
+        Ok(())
+    }
+
+    /// Transition an issue to a new state with validation
+    pub fn transition(&mut self, issue_number: u64, to_state: PlebState) -> Result<()> {
+        let issue = self.tracked.get(&issue_number).with_context(|| {
+            format!("Issue #{} is not being tracked", issue_number)
+        })?;
+
+        let current_state = issue.state;
+        let valid_transitions = current_state.valid_transitions();
+
+        if !valid_transitions.contains(&to_state) {
+            anyhow::bail!(
+                "Cannot transition issue #{} from {:?} to {:?}. Valid transitions from {:?} are: {:?}",
+                issue_number,
+                current_state,
+                to_state,
+                current_state,
+                valid_transitions
+            );
+        }
+
+        // Transition is valid, update the state
+        self.update_state(issue_number, to_state)
+    }
+}
+
+impl Default for IssueTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_transitions() {
+        assert_eq!(
+            PlebState::Ready.valid_transitions(),
+            vec![PlebState::Provisioning]
+        );
+        assert_eq!(
+            PlebState::Provisioning.valid_transitions(),
+            vec![PlebState::Waiting, PlebState::Working]
+        );
+        assert_eq!(
+            PlebState::Waiting.valid_transitions(),
+            vec![PlebState::Working]
+        );
+        assert_eq!(
+            PlebState::Working.valid_transitions(),
+            vec![PlebState::Waiting, PlebState::Done]
+        );
+        assert_eq!(PlebState::Done.valid_transitions(), vec![]);
+    }
+
+    #[test]
+    fn test_is_terminal() {
+        assert!(!PlebState::Ready.is_terminal());
+        assert!(!PlebState::Provisioning.is_terminal());
+        assert!(!PlebState::Waiting.is_terminal());
+        assert!(!PlebState::Working.is_terminal());
+        assert!(PlebState::Done.is_terminal());
+    }
+
+    #[test]
+    fn test_track_untrack() {
+        let mut tracker = IssueTracker::new();
+
+        tracker.track(123, PlebState::Ready);
+        assert!(tracker.get(123).is_some());
+        assert_eq!(tracker.get(123).unwrap().state, PlebState::Ready);
+
+        let untracked = tracker.untrack(123);
+        assert!(untracked.is_some());
+        assert!(tracker.get(123).is_none());
+    }
+
+    #[test]
+    fn test_update_state() {
+        let mut tracker = IssueTracker::new();
+        tracker.track(123, PlebState::Ready);
+
+        tracker.update_state(123, PlebState::Working).unwrap();
+        assert_eq!(tracker.get(123).unwrap().state, PlebState::Working);
+    }
+
+    #[test]
+    fn test_get_by_state() {
+        let mut tracker = IssueTracker::new();
+        tracker.track(123, PlebState::Ready);
+        tracker.track(456, PlebState::Working);
+        tracker.track(789, PlebState::Ready);
+
+        let ready_issues = tracker.get_by_state(PlebState::Ready);
+        assert_eq!(ready_issues.len(), 2);
+
+        let working_issues = tracker.get_by_state(PlebState::Working);
+        assert_eq!(working_issues.len(), 1);
+    }
+
+    #[test]
+    fn test_valid_transition() {
+        let mut tracker = IssueTracker::new();
+        tracker.track(123, PlebState::Ready);
+
+        // Valid transition
+        tracker.transition(123, PlebState::Provisioning).unwrap();
+        assert_eq!(tracker.get(123).unwrap().state, PlebState::Provisioning);
+    }
+
+    #[test]
+    fn test_invalid_transition() {
+        let mut tracker = IssueTracker::new();
+        tracker.track(123, PlebState::Ready);
+
+        // Invalid transition (Ready -> Working requires going through Provisioning)
+        let result = tracker.transition(123, PlebState::Working);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Cannot transition"));
+
+        // State should not have changed
+        assert_eq!(tracker.get(123).unwrap().state, PlebState::Ready);
+    }
+
+    #[test]
+    fn test_terminal_state_transition() {
+        let mut tracker = IssueTracker::new();
+        tracker.track(123, PlebState::Done);
+
+        // Cannot transition from Done (terminal state)
+        let result = tracker.transition(123, PlebState::Working);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_worktree_path() {
+        let mut tracker = IssueTracker::new();
+        tracker.track(123, PlebState::Ready);
+
+        let path = PathBuf::from("/tmp/worktree/issue-123");
+        tracker.set_worktree_path(123, path.clone()).unwrap();
+
+        let issue = tracker.get(123).unwrap();
+        assert_eq!(issue.worktree_path, Some(path));
+    }
+}
