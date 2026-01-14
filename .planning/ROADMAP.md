@@ -50,8 +50,8 @@ Plans:
 Plans:
 - [x] 04-01: State machine (ready → provisioning → waiting → working)
 - [x] 04-02: Prompt template system (prompts/ dir, Handlebars templating, config for prompt paths)
-- [ ] 04-03: Main daemon loop (watch → provision → invoke → manage)
-- [ ] 04-04: Claude Code invocation with issue as prompt
+- [x] 04-03: Claude Code invocation within tmux windows
+- [ ] 04-04: Main daemon loop (watch → provision → invoke → manage)
 
 ### Phase 5: Hooks & Skills
 **Goal**: Integration points for Claude Code state transitions and convenience commands
@@ -69,5 +69,5 @@ Plans:
 | 1. Foundation | 2/2 | Complete | 2026-01-13 |
 | 2. GitHub Integration | 3/3 | Complete | 2026-01-13 |
 | 3. Session Management | 2/2 | Complete | 2026-01-13 |
-| 4. Orchestration | 2/4 | In progress | - |
+| 4. Orchestration | 3/4 | In progress | - |
 | 5. Hooks & Skills | 0/2 | Not started | - |

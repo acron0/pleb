@@ -15,6 +15,11 @@ impl TmuxManager {
         }
     }
 
+    /// Get the session name
+    pub fn session_name(&self) -> &str {
+        &self.session_name
+    }
+
     /// Ensure the pleb session exists, create if not
     pub async fn ensure_session(&self) -> Result<()> {
         // Check if session exists
