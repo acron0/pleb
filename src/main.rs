@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod github;
+mod state;
 mod tmux;
 mod worktree;
 

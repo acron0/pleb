@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use octocrab::Octocrab;
 
 use crate::config::{GithubConfig, LabelConfig};
+use crate::state::PlebState;
 
 #[derive(Debug, Clone)]
 pub struct Issue {
@@ -17,15 +18,6 @@ pub struct Issue {
 pub enum IssueState {
     Open,
     Closed,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PlebState {
-    Ready,
-    Provisioning,
-    Waiting,
-    Working,
-    Done,
 }
 
 impl From<octocrab::models::issues::Issue> for Issue {
