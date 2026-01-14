@@ -1,0 +1,69 @@
+# Pleb Configuration Example
+# Copy this file to pleb.toml and customize for your project
+
+[github]
+# GitHub repository owner (organization or user)
+owner = "your-org"
+
+# GitHub repository name
+repo = "your-repo"
+
+# Environment variable name containing the GitHub token
+# The token needs repo read/write permissions for issues and labels
+token_env = "GITHUB_TOKEN"
+
+[labels]
+# Label that triggers Pleb to pick up an issue
+ready = "pleb:ready"
+
+# Label applied when creating worktree and tmux session
+provisioning = "pleb:provisioning"
+
+# Label applied when Claude is waiting for user input
+waiting = "pleb:waiting"
+
+# Label applied when Claude is actively working
+working = "pleb:working"
+
+# Label applied when work is complete
+done = "pleb:done"
+
+[claude]
+# Command to invoke Claude Code CLI
+command = "claude"
+
+# Additional arguments to pass to Claude
+# --dangerously-skip-permissions allows Claude to run without interactive prompts
+args = ["--dangerously-skip-permissions"]
+
+[paths]
+# Directory where the main repo clone lives
+# Pleb will clone the repo here if it doesn't exist
+repo_dir = "./repo"
+
+# Base directory for git worktrees
+# Each issue will get its own worktree under this directory
+worktree_base = "./worktrees"
+
+[prompts]
+# Directory containing prompt template files
+# Pleb will look for prompt files in this directory
+dir = "./prompts"
+
+# Prompt template file for new issues
+# This prompt is used when Claude starts working on a fresh issue
+new_issue = "new_issue.md"
+
+# Prompt template file for when planning is complete
+# This prompt is used when transitioning from planning to implementation
+planning_done = "planning_done.md"
+
+[watch]
+# How often (in seconds) to poll GitHub for new issues
+# Lower values = faster response, but more API calls
+poll_interval_secs = 5
+
+[tmux]
+# Name of the tmux session where all issue windows will live
+# All issues run in windows within this single session
+session_name = "pleb"

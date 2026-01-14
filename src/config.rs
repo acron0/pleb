@@ -202,7 +202,7 @@ impl Config {
             );
         }
 
-        // Validate prompts config
+        // Validate prompts config - directory and files must exist
         anyhow::ensure!(
             !self.prompts.new_issue.is_empty(),
             "prompts.new_issue must not be empty"
@@ -212,13 +212,25 @@ impl Config {
             "prompts.planning_done must not be empty"
         );
 
-        // Warn if prompts directory doesn't exist
-        if !self.prompts.dir.exists() {
-            tracing::warn!(
-                "Prompts directory does not exist: {} (prompt files should be created here)",
-                self.prompts.dir.display()
-            );
-        }
+        anyhow::ensure!(
+            self.prompts.dir.exists(),
+            "Prompts directory does not exist: {}",
+            self.prompts.dir.display()
+        );
+
+        let new_issue_path = self.prompts.dir.join(&self.prompts.new_issue);
+        anyhow::ensure!(
+            new_issue_path.exists(),
+            "Prompt file does not exist: {}",
+            new_issue_path.display()
+        );
+
+        let planning_done_path = self.prompts.dir.join(&self.prompts.planning_done);
+        anyhow::ensure!(
+            planning_done_path.exists(),
+            "Prompt file does not exist: {}",
+            planning_done_path.display()
+        );
 
         // Validate watch config
         anyhow::ensure!(
