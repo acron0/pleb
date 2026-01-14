@@ -45,10 +45,10 @@ Plans:
 ### Phase 4: Orchestration
 **Goal**: Main daemon that ties everything together with state machine
 **Depends on**: Phases 2, 3
-**Plans**: TBD after planning
+**Status**: In progress
 
 Plans:
-- [ ] 04-01: State machine (ready → provisioning → waiting → working)
+- [x] 04-01: State machine (ready → provisioning → waiting → working)
 - [ ] 04-02: Prompt template system (prompts/ dir, Handlebars templating, config for prompt paths)
 - [ ] 04-03: Main daemon loop (watch → provision → invoke → manage)
 - [ ] 04-04: Claude Code invocation with issue as prompt
@@ -69,5 +69,5 @@ Plans:
 | 1. Foundation | 2/2 | Complete | 2026-01-13 |
 | 2. GitHub Integration | 3/3 | Complete | 2026-01-13 |
 | 3. Session Management | 2/2 | Complete | 2026-01-13 |
-| 4. Orchestration | 0/4 | Not started | - |
+| 4. Orchestration | 1/4 | In progress | - |
 | 5. Hooks & Skills | 0/2 | Not started | - |
