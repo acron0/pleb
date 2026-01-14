@@ -24,6 +24,7 @@ impl ClaudeRunner {
     }
 
     /// Invoke Claude Code in the issue's tmux window with the given prompt
+    /// Claude starts in interactive mode so user can attach and interact
     #[allow(dead_code)]
     pub async fn invoke(&self, issue_number: u64, prompt: &str) -> Result<()> {
         // Write prompt to a temp file to avoid shell escaping issues
@@ -32,12 +33,15 @@ impl ClaudeRunner {
             .with_context(|| format!("Failed to write prompt to temp file: {}", temp_file))?;
 
         // Construct the claude command
-        // Format: {command} {args...} --print < {temp_file}
-        let mut cmd_parts = vec![self.command.clone()];
+        // Format: cat {temp_file} | {command} {args...}
+        // Using cat pipe keeps Claude in interactive mode (no --print)
+        let mut cmd_parts = vec![
+            "cat".to_string(),
+            temp_file.clone(),
+            "|".to_string(),
+            self.command.clone(),
+        ];
         cmd_parts.extend(self.args.iter().cloned());
-        cmd_parts.push("--print".to_string());
-        cmd_parts.push("<".to_string());
-        cmd_parts.push(temp_file.clone());
 
         let full_command = cmd_parts.join(" ");
 
