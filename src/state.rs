@@ -15,6 +15,7 @@ pub enum PlebState {
 
 impl PlebState {
     /// Returns the valid next states from the current state
+    #[allow(dead_code)]
     pub fn valid_transitions(&self) -> Vec<PlebState> {
         match self {
             PlebState::Ready => vec![PlebState::Provisioning],
@@ -26,6 +27,7 @@ impl PlebState {
     }
 
     /// Returns true if this is a terminal state (no valid transitions)
+    #[allow(dead_code)]
     pub fn is_terminal(&self) -> bool {
         self.valid_transitions().is_empty()
     }
@@ -33,6 +35,7 @@ impl PlebState {
 
 /// Represents a single tracked issue with its current state and metadata
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TrackedIssue {
     pub issue_number: u64,
     pub state: PlebState,
@@ -43,12 +46,14 @@ pub struct TrackedIssue {
 
 /// Manages the state of all issues being tracked by pleb
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct IssueTracker {
     tracked: HashMap<u64, TrackedIssue>,
 }
 
 impl IssueTracker {
     /// Create a new empty issue tracker
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             tracked: HashMap::new(),
@@ -56,6 +61,7 @@ impl IssueTracker {
     }
 
     /// Start tracking an issue with the given state
+    #[allow(dead_code)]
     pub fn track(&mut self, issue_number: u64, state: PlebState) {
         let now = Instant::now();
         let tracked_issue = TrackedIssue {
@@ -69,21 +75,25 @@ impl IssueTracker {
     }
 
     /// Stop tracking an issue
+    #[allow(dead_code)]
     pub fn untrack(&mut self, issue_number: u64) -> Option<TrackedIssue> {
         self.tracked.remove(&issue_number)
     }
 
     /// Get a tracked issue by number
+    #[allow(dead_code)]
     pub fn get(&self, issue_number: u64) -> Option<&TrackedIssue> {
         self.tracked.get(&issue_number)
     }
 
     /// Get a mutable reference to a tracked issue by number
+    #[allow(dead_code)]
     pub fn get_mut(&mut self, issue_number: u64) -> Option<&mut TrackedIssue> {
         self.tracked.get_mut(&issue_number)
     }
 
     /// Get all issues in a specific state
+    #[allow(dead_code)]
     pub fn get_by_state(&self, state: PlebState) -> Vec<&TrackedIssue> {
         self.tracked
             .values()
@@ -92,6 +102,7 @@ impl IssueTracker {
     }
 
     /// Update the state of a tracked issue
+    #[allow(dead_code)]
     pub fn update_state(&mut self, issue_number: u64, new_state: PlebState) -> Result<()> {
         let issue = self.tracked.get_mut(&issue_number).with_context(|| {
             format!("Issue #{} is not being tracked", issue_number)
@@ -103,6 +114,7 @@ impl IssueTracker {
     }
 
     /// Set the worktree path for a tracked issue
+    #[allow(dead_code)]
     pub fn set_worktree_path(&mut self, issue_number: u64, path: PathBuf) -> Result<()> {
         let issue = self.tracked.get_mut(&issue_number).with_context(|| {
             format!("Issue #{} is not being tracked", issue_number)
@@ -114,6 +126,7 @@ impl IssueTracker {
     }
 
     /// Transition an issue to a new state with validation
+    #[allow(dead_code)]
     pub fn transition(&mut self, issue_number: u64, to_state: PlebState) -> Result<()> {
         let issue = self.tracked.get(&issue_number).with_context(|| {
             format!("Issue #{} is not being tracked", issue_number)

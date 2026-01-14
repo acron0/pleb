@@ -5,6 +5,7 @@ use crate::config::{GithubConfig, LabelConfig};
 use crate::state::PlebState;
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Issue {
     pub number: u64,
     pub title: String,

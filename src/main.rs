@@ -2,6 +2,7 @@ mod cli;
 mod config;
 mod github;
 mod state;
+mod templates;
 mod tmux;
 mod worktree;
 
