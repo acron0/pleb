@@ -24,6 +24,9 @@ pub enum Commands {
     #[command(about = "List active sessions")]
     List,
 
+    #[command(about = "Stop the daemon")]
+    Stop,
+
     #[command(about = "Tail the pleb log file")]
     Log {
         /// Follow the log file (like tail -f)

@@ -520,6 +520,57 @@ fn handle_log_command(follow: bool, lines: usize, config: Config) -> Result<()> 
     }
 }
 
+fn handle_stop_command(config: Config) -> Result<()> {
+    let pid_file_path = config.pid_file()?;
+
+    // Check if PID file exists
+    if !pid_file_path.exists() {
+        anyhow::bail!(
+            "No PID file found. Is the daemon running? Expected: {}",
+            pid_file_path.display()
+        );
+    }
+
+    // Read PID from file
+    let pid_str = std::fs::read_to_string(&pid_file_path)
+        .with_context(|| format!("Failed to read PID file: {}", pid_file_path.display()))?;
+    let pid: i32 = pid_str
+        .trim()
+        .parse()
+        .with_context(|| format!("Invalid PID in file: {}", pid_str.trim()))?;
+
+    // Send SIGTERM to the process
+    #[cfg(unix)]
+    {
+        use nix::sys::signal::{kill, Signal};
+        use nix::unistd::Pid;
+
+        match kill(Pid::from_raw(pid), Signal::SIGTERM) {
+            Ok(_) => {
+                println!("Sent SIGTERM to daemon (PID: {})", pid);
+                // Remove PID file
+                let _ = std::fs::remove_file(&pid_file_path);
+                println!("Daemon stopped.");
+            }
+            Err(nix::errno::Errno::ESRCH) => {
+                // Process doesn't exist, clean up stale PID file
+                let _ = std::fs::remove_file(&pid_file_path);
+                println!("Daemon was not running (stale PID file removed).");
+            }
+            Err(e) => {
+                anyhow::bail!("Failed to send signal to daemon: {}", e);
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        anyhow::bail!("Stop command is only supported on Unix systems");
+    }
+
+    Ok(())
+}
+
 fn run_daemon_mode(config: Config) -> Result<()> {
     use daemonize::Daemonize;
     use std::fs;
@@ -593,6 +644,9 @@ async fn handle_command(command: Commands, config: Config) -> Result<()> {
         }
         Commands::Log { follow, lines } => {
             handle_log_command(follow, lines, config)?;
+        }
+        Commands::Stop => {
+            handle_stop_command(config)?;
         }
         Commands::List => {
             let tmux_manager = TmuxManager::new(&config.tmux);
