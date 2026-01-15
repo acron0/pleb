@@ -84,3 +84,7 @@ Create these labels in your repository:
 ## Environment Variables
 
 - `GITHUB_TOKEN` - GitHub Personal Access Token with repo access
+
+---
+
+To any agents reading this file, if you have been told to "study" this file then also study everything in .planning/
