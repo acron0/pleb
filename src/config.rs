@@ -168,6 +168,12 @@ impl Config {
         Ok(self.daemon_dir()?.join("pleb.pid"))
     }
 
+    /// Parse configuration from a TOML string (useful for testing)
+    #[allow(dead_code)]
+    pub fn from_str(content: &str) -> Result<Self> {
+        toml::from_str(content).context("Failed to parse config")
+    }
+
     /// Validate the configuration
     pub fn validate(&self) -> Result<()> {
         // Validate GitHub config
@@ -256,5 +262,303 @@ impl Config {
         );
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MINIMAL_CONFIG: &str = r#"
+[github]
+owner = "testowner"
+repo = "testrepo"
+
+[labels]
+[claude]
+[paths]
+[prompts]
+[watch]
+[tmux]
+"#;
+
+    const FULL_CONFIG: &str = r#"
+[github]
+owner = "myorg"
+repo = "myrepo"
+token_env = "MY_GITHUB_TOKEN"
+
+[labels]
+ready = "custom:ready"
+provisioning = "custom:provisioning"
+waiting = "custom:waiting"
+working = "custom:working"
+done = "custom:done"
+
+[claude]
+command = "/usr/local/bin/claude"
+args = ["--verbose", "--no-cache"]
+
+[paths]
+repo_dir = "/custom/repo"
+worktree_base = "/custom/worktrees"
+
+[prompts]
+dir = "/custom/prompts"
+new_issue = "custom_new.md"
+planning_done = "custom_done.md"
+
+[watch]
+poll_interval_secs = 30
+
+[tmux]
+session_name = "custom-session"
+"#;
+
+    // ===================
+    // TOML Parsing Tests
+    // ===================
+
+    #[test]
+    fn test_parse_minimal_config() {
+        let config = Config::from_str(MINIMAL_CONFIG).expect("Should parse minimal config");
+        assert_eq!(config.github.owner, "testowner");
+        assert_eq!(config.github.repo, "testrepo");
+    }
+
+    #[test]
+    fn test_parse_full_config() {
+        let config = Config::from_str(FULL_CONFIG).expect("Should parse full config");
+        assert_eq!(config.github.owner, "myorg");
+        assert_eq!(config.github.repo, "myrepo");
+        assert_eq!(config.github.token_env, "MY_GITHUB_TOKEN");
+        assert_eq!(config.labels.ready, "custom:ready");
+        assert_eq!(config.claude.command, "/usr/local/bin/claude");
+        assert_eq!(config.claude.args, vec!["--verbose", "--no-cache"]);
+        assert_eq!(config.paths.repo_dir, PathBuf::from("/custom/repo"));
+        assert_eq!(config.watch.poll_interval_secs, 30);
+        assert_eq!(config.tmux.session_name, "custom-session");
+    }
+
+    #[test]
+    fn test_parse_invalid_toml_syntax() {
+        let invalid = "this is not valid toml [[[";
+        let result = Config::from_str(invalid);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_missing_required_section() {
+        // Missing [github] section entirely
+        let missing_github = r#"
+[labels]
+[claude]
+[paths]
+[prompts]
+[watch]
+[tmux]
+"#;
+        let result = Config::from_str(missing_github);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_missing_required_field() {
+        // Has [github] but missing owner
+        let missing_owner = r#"
+[github]
+repo = "testrepo"
+
+[labels]
+[claude]
+[paths]
+[prompts]
+[watch]
+[tmux]
+"#;
+        let result = Config::from_str(missing_owner);
+        assert!(result.is_err());
+    }
+
+    // ===================
+    // Defaults Tests
+    // ===================
+
+    #[test]
+    fn test_defaults_applied() {
+        let config = Config::from_str(MINIMAL_CONFIG).expect("Should parse");
+
+        // GitHub defaults
+        assert_eq!(config.github.token_env, "GITHUB_TOKEN");
+
+        // Label defaults
+        assert_eq!(config.labels.ready, "pleb:ready");
+        assert_eq!(config.labels.provisioning, "pleb:provisioning");
+        assert_eq!(config.labels.waiting, "pleb:waiting");
+        assert_eq!(config.labels.working, "pleb:working");
+        assert_eq!(config.labels.done, "pleb:done");
+
+        // Claude defaults
+        assert_eq!(config.claude.command, "claude");
+        assert_eq!(config.claude.args, vec!["--dangerously-skip-permissions"]);
+
+        // Path defaults
+        assert_eq!(config.paths.repo_dir, PathBuf::from("./repo"));
+        assert_eq!(config.paths.worktree_base, PathBuf::from("./worktrees"));
+
+        // Prompts defaults
+        assert_eq!(config.prompts.dir, PathBuf::from("./prompts"));
+        assert_eq!(config.prompts.new_issue, "new_issue.md");
+        assert_eq!(config.prompts.planning_done, "planning_done.md");
+
+        // Watch defaults
+        assert_eq!(config.watch.poll_interval_secs, 5);
+
+        // Tmux defaults
+        assert_eq!(config.tmux.session_name, "pleb");
+    }
+
+    // ===================
+    // Validation Tests
+    // ===================
+
+    #[test]
+    fn test_validate_empty_owner() {
+        let toml = r#"
+[github]
+owner = ""
+repo = "testrepo"
+
+[labels]
+[claude]
+[paths]
+[prompts]
+[watch]
+[tmux]
+"#;
+        let config = Config::from_str(toml).expect("Should parse");
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("owner"));
+    }
+
+    #[test]
+    fn test_validate_empty_repo() {
+        let toml = r#"
+[github]
+owner = "testowner"
+repo = ""
+
+[labels]
+[claude]
+[paths]
+[prompts]
+[watch]
+[tmux]
+"#;
+        let config = Config::from_str(toml).expect("Should parse");
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("repo"));
+    }
+
+    #[test]
+    fn test_validate_empty_token_env() {
+        let toml = r#"
+[github]
+owner = "testowner"
+repo = "testrepo"
+token_env = ""
+
+[labels]
+[claude]
+[paths]
+[prompts]
+[watch]
+[tmux]
+"#;
+        let config = Config::from_str(toml).expect("Should parse");
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("token_env"));
+    }
+
+    #[test]
+    fn test_validate_duplicate_labels() {
+        let toml = r#"
+[github]
+owner = "testowner"
+repo = "testrepo"
+
+[labels]
+ready = "same-label"
+done = "same-label"
+
+[claude]
+[paths]
+[prompts]
+[watch]
+[tmux]
+"#;
+        let config = Config::from_str(toml).expect("Should parse");
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Label conflict"));
+    }
+
+    #[test]
+    fn test_validate_zero_poll_interval() {
+        let toml = r#"
+[github]
+owner = "testowner"
+repo = "testrepo"
+
+[labels]
+[claude]
+[paths]
+[prompts]
+[watch]
+poll_interval_secs = 0
+
+[tmux]
+"#;
+        let config = Config::from_str(toml).expect("Should parse");
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("poll_interval_secs"));
+    }
+
+    // ===================
+    // Path Construction Tests
+    // ===================
+
+    #[test]
+    fn test_daemon_dir_construction() {
+        let config = Config::from_str(MINIMAL_CONFIG).expect("Should parse");
+        let daemon_dir = config.daemon_dir().expect("Should get daemon dir");
+
+        // Should end with .pleb/testowner-testrepo
+        let path_str = daemon_dir.to_string_lossy();
+        assert!(path_str.contains(".pleb"));
+        assert!(path_str.ends_with("testowner-testrepo"));
+    }
+
+    #[test]
+    fn test_log_file_construction() {
+        let config = Config::from_str(MINIMAL_CONFIG).expect("Should parse");
+        let log_file = config.log_file().expect("Should get log file");
+
+        assert!(log_file.to_string_lossy().ends_with("pleb.log"));
+    }
+
+    #[test]
+    fn test_pid_file_construction() {
+        let config = Config::from_str(MINIMAL_CONFIG).expect("Should parse");
+        let pid_file = config.pid_file().expect("Should get pid file");
+
+        assert!(pid_file.to_string_lossy().ends_with("pleb.pid"));
     }
 }
