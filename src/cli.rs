@@ -27,8 +27,14 @@ pub enum Commands {
     Transition {
         /// Issue number
         issue_number: u64,
-        /// Target state (ready, provisioning, waiting, working, done)
+        /// Target state (ready, provisioning, waiting, working, done, none)
         state: String,
+    },
+
+    #[command(about = "Show pleb state for an issue")]
+    Status {
+        /// Issue number
+        issue_number: u64,
     },
 
     #[command(about = "Hook invoked by Claude Code on events")]

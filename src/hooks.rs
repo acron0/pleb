@@ -56,6 +56,7 @@ pub fn generate_hooks_json() -> Result<String> {
 }
 
 /// Install hooks to the specified directory's .claude/settings.json
+/// Also installs slash commands to .claude/commands/
 pub fn install_hooks(path: &Path) -> Result<()> {
     let claude_dir = path.join(".claude");
     let settings_file = claude_dir.join("settings.json");
@@ -97,6 +98,10 @@ pub fn install_hooks(path: &Path) -> Result<()> {
         "Installed Claude Code hooks to: {}",
         settings_file.display()
     );
+
+    // Install slash commands
+    crate::commands::install_commands(path)
+        .context("Failed to install slash commands")?;
 
     Ok(())
 }

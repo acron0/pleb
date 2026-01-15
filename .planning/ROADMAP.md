@@ -10,7 +10,7 @@ Build an issue-driven Claude Code orchestrator that watches GitHub for labeled i
 - [x] **Phase 2: GitHub Integration** - Issue watching, label management, API client
 - [x] **Phase 3: Session Management** - Git worktree + tmux provisioning
 - [x] **Phase 4: Orchestration** - Main daemon loop, state machine
-- [ ] **Phase 5: Hooks & Skills** - Claude Code hooks, built-in skills
+- [x] **Phase 5: Hooks & Skills** - Claude Code hooks, built-in skills
 
 ## Phase Details
 
@@ -56,11 +56,11 @@ Plans:
 ### Phase 5: Hooks & Skills
 **Goal**: Integration points for Claude Code state transitions and convenience commands
 **Depends on**: Phase 4
-**Status**: In progress
+**Status**: Complete
 
 Plans:
 - [x] 05-01: Hook Infrastructure (`pleb transition`, `pleb cc-run-hook`, `pleb hooks generate|install`, auto-install during provisioning)
-- [ ] 05-02: Slash Commands (`/pleb-shipit`, `/pleb-abandon`, `/pleb-status`)
+- [x] 05-02: Slash Commands (`/pleb-shipit`, `/pleb-abandon`, `/pleb-status`)
 
 ## Progress
 
@@ -70,4 +70,4 @@ Plans:
 | 2. GitHub Integration | 3/3 | Complete | 2026-01-13 |
 | 3. Session Management | 2/2 | Complete | 2026-01-13 |
 | 4. Orchestration | 4/4 | Complete | 2026-01-14 |
-| 5. Hooks & Skills | 1/2 | In progress | - |
+| 5. Hooks & Skills | 2/2 | Complete | 2026-01-15 |

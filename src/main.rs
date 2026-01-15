@@ -1,5 +1,6 @@
 mod claude;
 mod cli;
+mod commands;
 mod config;
 mod github;
 mod hooks;
@@ -298,15 +299,34 @@ async fn handle_transition_command(
     state_str: &str,
     config: Config,
 ) -> Result<()> {
-    // Parse state string
-    let target_state = parse_state(state_str)?;
-
     // Create GitHub client
     let github = GitHubClient::new(&config.github).await?;
 
     // Fetch the issue to determine current state
     let issue = github.get_issue(issue_number).await?;
     let current_state = github.get_pleb_state(&issue, &config.labels);
+
+    // Handle "none" as a special case to remove all pleb labels
+    if state_str.to_lowercase() == "none" {
+        // Remove all pleb labels
+        let all_labels = vec![
+            &config.labels.ready,
+            &config.labels.provisioning,
+            &config.labels.waiting,
+            &config.labels.working,
+            &config.labels.done,
+        ];
+
+        for label in all_labels {
+            github.remove_label(issue_number, label).await?;
+        }
+
+        println!("Issue #{} is no longer managed by pleb (all pleb labels removed)", issue_number);
+        return Ok(());
+    }
+
+    // Parse state string
+    let target_state = parse_state(state_str)?;
 
     // Transition to target state
     if let Some(from_state) = current_state {
@@ -326,6 +346,40 @@ async fn handle_transition_command(
     }
 
     println!("Issue #{} transitioned to {:?}", issue_number, target_state);
+
+    Ok(())
+}
+
+async fn handle_status_command(issue_number: u64, config: Config) -> Result<()> {
+    // Create GitHub client
+    let github = GitHubClient::new(&config.github).await?;
+
+    // Fetch the issue
+    let issue = github.get_issue(issue_number).await?;
+
+    // Determine current pleb state
+    let current_state = github.get_pleb_state(&issue, &config.labels);
+
+    // Print formatted status
+    println!("Issue #{}: {}", issue.number, issue.title);
+
+    match current_state {
+        Some(state) => {
+            let state_name = match state {
+                PlebState::Ready => "ready",
+                PlebState::Provisioning => "provisioning",
+                PlebState::Waiting => "waiting",
+                PlebState::Working => "working",
+                PlebState::Done => "done",
+            };
+            println!("State: {}", state_name);
+        }
+        None => {
+            println!("State: not managed by pleb");
+        }
+    }
+
+    println!("URL: {}", issue.html_url);
 
     Ok(())
 }
@@ -459,6 +513,9 @@ async fn handle_command(command: Commands, config: Config) -> Result<()> {
         }
         Commands::CcRunHook { event } => {
             handle_cc_run_hook_command(&event, config).await?;
+        }
+        Commands::Status { issue_number } => {
+            handle_status_command(issue_number, config).await?;
         }
         Commands::Hooks { action } => {
             handle_hooks_command(action)?;
