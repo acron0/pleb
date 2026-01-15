@@ -583,6 +583,38 @@ fn run_daemon_mode(config: Config) -> Result<()> {
     let log_file_path = config.log_file()?;
     let pid_file_path = config.pid_file()?;
 
+    // Check for existing daemon
+    if pid_file_path.exists() {
+        let pid_str = fs::read_to_string(&pid_file_path)
+            .with_context(|| format!("Failed to read PID file: {}", pid_file_path.display()))?;
+        if let Ok(pid) = pid_str.trim().parse::<i32>() {
+            // Check if process is still running
+            #[cfg(unix)]
+            {
+                use nix::sys::signal::{kill, Signal};
+                use nix::unistd::Pid;
+
+                match kill(Pid::from_raw(pid), None) {
+                    Ok(_) => {
+                        // Process exists
+                        anyhow::bail!(
+                            "Daemon already running (PID: {}). Use 'pleb stop' first.",
+                            pid
+                        );
+                    }
+                    Err(nix::errno::Errno::ESRCH) => {
+                        // Process doesn't exist, stale PID file
+                        println!("Removing stale PID file (process {} not found)", pid);
+                        let _ = fs::remove_file(&pid_file_path);
+                    }
+                    Err(e) => {
+                        anyhow::bail!("Failed to check if daemon is running: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
     // Print info before daemonizing (so user sees it)
     println!("Starting daemon...");
     println!("Log file: {}", log_file_path.display());
