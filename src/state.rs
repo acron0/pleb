@@ -275,4 +275,52 @@ mod tests {
         let issue = tracker.get(123).unwrap();
         assert_eq!(issue.worktree_path, Some(path));
     }
+
+    #[test]
+    fn test_update_state_nonexistent_issue() {
+        let mut tracker = IssueTracker::new();
+        let result = tracker.update_state(999, PlebState::Working);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not being tracked"));
+    }
+
+    #[test]
+    fn test_set_worktree_path_nonexistent_issue() {
+        let mut tracker = IssueTracker::new();
+        let result = tracker.set_worktree_path(999, PathBuf::from("/tmp"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not being tracked"));
+    }
+
+    #[test]
+    fn test_tracker_default() {
+        let tracker = IssueTracker::default();
+        assert!(tracker.get(1).is_none());
+    }
+
+    #[test]
+    fn test_state_equality_and_copy() {
+        let s1 = PlebState::Ready;
+        let s2 = PlebState::Ready;
+        let s3 = PlebState::Working;
+
+        assert_eq!(s1, s2);
+        assert_ne!(s1, s3);
+
+        // Test Copy trait
+        let s4 = s1;
+        assert_eq!(s1, s4);
+    }
+
+    #[test]
+    fn test_get_mut() {
+        let mut tracker = IssueTracker::new();
+        tracker.track(123, PlebState::Ready);
+
+        if let Some(issue) = tracker.get_mut(123) {
+            issue.state = PlebState::Working;
+        }
+
+        assert_eq!(tracker.get(123).unwrap().state, PlebState::Working);
+    }
 }
