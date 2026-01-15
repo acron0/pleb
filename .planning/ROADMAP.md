@@ -12,6 +12,7 @@ Build an issue-driven Claude Code orchestrator that watches GitHub for labeled i
 - [x] **Phase 4: Orchestration** - Main daemon loop, state machine
 - [x] **Phase 5: Hooks & Skills** - Claude Code hooks, built-in skills
 - [x] **Phase 6: Daemon Mode** - Background daemon with file logging
+- [x] **Phase 7: Unit Tests** - Pure function unit tests for untested modules
 
 ## Phase Details
 
@@ -71,6 +72,15 @@ Plans:
 Plans:
 - [x] 06-01: Daemon mode (`--daemon` flag, file logging, PID file, `pleb log` command)
 
+### Phase 7: Unit Tests
+**Goal**: Unit test coverage for pure functions in untested modules
+**Depends on**: Nothing (independent)
+**Status**: Complete
+
+Plans:
+- [x] 07-01: Config module tests (TOML parsing, defaults, validation logic)
+- [x] 07-02: Template + coverage review (IssueContext tests, expand existing tests)
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -81,3 +91,4 @@ Plans:
 | 4. Orchestration | 4/4 | Complete | 2026-01-14 |
 | 5. Hooks & Skills | 2/2 | Complete | 2026-01-15 |
 | 6. Daemon Mode | 1/1 | Complete | 2026-01-15 |
+| 7. Unit Tests | 2/2 | Complete | 2026-01-15 |
