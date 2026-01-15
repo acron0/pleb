@@ -23,9 +23,16 @@ use claude::ClaudeRunner;
 use templates::{TemplateEngine, IssueContext};
 use state::PlebState;
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Initialize tracing
+fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    // Handle daemon mode specially - must fork BEFORE creating tokio runtime
+    if let Commands::Watch { daemon: true } = &cli.command {
+        let config = load_config(&cli.config)?;
+        return run_daemon_mode(config);
+    }
+
+    // Initialize tracing for non-daemon modes
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -34,7 +41,8 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let cli = Cli::parse();
+    // Create tokio runtime for async operations
+    let runtime = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
 
     match &cli.command {
         Commands::Config { action } => {
@@ -47,7 +55,7 @@ async fn main() -> Result<()> {
         _ => {
             // For all other commands, load and validate config
             let config = load_config(&cli.config)?;
-            handle_command(cli.command, config).await?;
+            runtime.block_on(handle_command(cli.command, config))?;
         }
     }
 
@@ -512,7 +520,7 @@ fn handle_log_command(follow: bool, lines: usize, config: Config) -> Result<()> 
     }
 }
 
-async fn run_daemon_mode(config: Config) -> Result<()> {
+fn run_daemon_mode(config: Config) -> Result<()> {
     use daemonize::Daemonize;
     use std::fs;
 
@@ -536,18 +544,19 @@ async fn run_daemon_mode(config: Config) -> Result<()> {
         .open(&log_file_path)
         .with_context(|| format!("Failed to open log file: {}", log_file_path.display()))?;
 
-    // Configure daemonize
+    // Configure daemonize - keep original working directory for relative paths in config
+    let current_dir = std::env::current_dir().context("Failed to get current directory")?;
     let daemonize = Daemonize::new()
         .pid_file(&pid_file_path)
-        .working_directory(&daemon_dir)
+        .working_directory(current_dir)
         .stdout(log_file.try_clone()?)
         .stderr(log_file);
 
-    // Fork into background
+    // Fork into background - BEFORE creating tokio runtime
     daemonize.start().context("Failed to daemonize")?;
 
     // After this point, we're in the daemon process
-    // Reconfigure tracing to write to the log file
+    // Set up tracing to write to the log file
     let log_file_for_tracing = config.log_file()?;
     let file_appender = tracing_appender::rolling::never(
         log_file_for_tracing.parent().unwrap(),
@@ -564,22 +573,23 @@ async fn run_daemon_mode(config: Config) -> Result<()> {
 
     tracing::info!("Daemon started with PID: {}", std::process::id());
 
-    // Run the orchestrator
-    let mut orchestrator = Orchestrator::new(config).await?;
-    orchestrator.run().await?;
+    // NOW create tokio runtime (after fork)
+    let runtime = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;
 
-    Ok(())
+    // Run the orchestrator
+    runtime.block_on(async {
+        let mut orchestrator = Orchestrator::new(config).await?;
+        orchestrator.run().await
+    })
 }
 
 async fn handle_command(command: Commands, config: Config) -> Result<()> {
     match command {
-        Commands::Watch { daemon } => {
-            if daemon {
-                run_daemon_mode(config).await?;
-            } else {
-                let mut orchestrator = Orchestrator::new(config).await?;
-                orchestrator.run().await?;
-            }
+        Commands::Watch { daemon: _ } => {
+            // Daemon mode is handled before tokio runtime is created
+            // This branch is only reached for non-daemon watch
+            let mut orchestrator = Orchestrator::new(config).await?;
+            orchestrator.run().await?;
         }
         Commands::Log { follow, lines } => {
             handle_log_command(follow, lines, config)?;
