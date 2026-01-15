@@ -151,6 +151,23 @@ impl Config {
         Self::load(Path::new("pleb.toml"))
     }
 
+    /// Get the daemon directory for this repo: ~/.pleb/{owner}-{repo}/
+    pub fn daemon_dir(&self) -> Result<PathBuf> {
+        let home = dirs::home_dir().context("Failed to determine home directory")?;
+        let dir_name = format!("{}-{}", self.github.owner, self.github.repo);
+        Ok(home.join(".pleb").join(dir_name))
+    }
+
+    /// Get the log file path: ~/.pleb/{owner}-{repo}/pleb.log
+    pub fn log_file(&self) -> Result<PathBuf> {
+        Ok(self.daemon_dir()?.join("pleb.log"))
+    }
+
+    /// Get the PID file path: ~/.pleb/{owner}-{repo}/pleb.pid
+    pub fn pid_file(&self) -> Result<PathBuf> {
+        Ok(self.daemon_dir()?.join("pleb.pid"))
+    }
+
     /// Validate the configuration
     pub fn validate(&self) -> Result<()> {
         // Validate GitHub config

@@ -11,6 +11,7 @@ Build an issue-driven Claude Code orchestrator that watches GitHub for labeled i
 - [x] **Phase 3: Session Management** - Git worktree + tmux provisioning
 - [x] **Phase 4: Orchestration** - Main daemon loop, state machine
 - [x] **Phase 5: Hooks & Skills** - Claude Code hooks, built-in skills
+- [x] **Phase 6: Daemon Mode** - Background daemon with file logging
 
 ## Phase Details
 
@@ -62,6 +63,14 @@ Plans:
 - [x] 05-01: Hook Infrastructure (`pleb transition`, `pleb cc-run-hook`, `pleb hooks generate|install`, auto-install during provisioning)
 - [x] 05-02: Slash Commands (`/pleb-shipit`, `/pleb-abandon`, `/pleb-status`)
 
+### Phase 6: Daemon Mode
+**Goal**: Run pleb as a background daemon with file logging
+**Depends on**: Phase 4 (needs watch command)
+**Status**: Complete
+
+Plans:
+- [x] 06-01: Daemon mode (`--daemon` flag, file logging, PID file, `pleb log` command)
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -71,3 +80,4 @@ Plans:
 | 3. Session Management | 2/2 | Complete | 2026-01-13 |
 | 4. Orchestration | 4/4 | Complete | 2026-01-14 |
 | 5. Hooks & Skills | 2/2 | Complete | 2026-01-15 |
+| 6. Daemon Mode | 1/1 | Complete | 2026-01-15 |

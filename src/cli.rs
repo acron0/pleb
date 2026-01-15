@@ -15,10 +15,25 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     #[command(about = "Start watching for issues")]
-    Watch,
+    Watch {
+        /// Run as a daemon in the background
+        #[arg(long, short)]
+        daemon: bool,
+    },
 
     #[command(about = "List active sessions")]
     List,
+
+    #[command(about = "Tail the pleb log file")]
+    Log {
+        /// Follow the log file (like tail -f)
+        #[arg(long, short, default_value = "true")]
+        follow: bool,
+
+        /// Number of lines to show
+        #[arg(long, short, default_value = "50")]
+        lines: usize,
+    },
 
     #[command(about = "Attach to the pleb tmux session")]
     Attach,

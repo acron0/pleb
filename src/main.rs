@@ -213,7 +213,7 @@ impl Orchestrator {
         for issue in issues {
             // Check if tmux window already exists (idempotent check)
             if self.tmux.window_exists(issue.number).await? {
-                tracing::debug!("Skipping issue #{} (tmux window already exists)", issue.number);
+                tracing::info!("Issue #{} already has tmux window, skipping", issue.number);
                 continue;
             }
 
@@ -470,11 +470,119 @@ fn parse_state(state_str: &str) -> Result<PlebState> {
     }
 }
 
+fn handle_log_command(follow: bool, lines: usize, config: Config) -> Result<()> {
+    use std::process::Command;
+
+    let log_file_path = config.log_file()?;
+
+    // Check if log file exists
+    if !log_file_path.exists() {
+        anyhow::bail!(
+            "No log file found. Is the daemon running? Expected: {}",
+            log_file_path.display()
+        );
+    }
+
+    // Build tail command
+    let mut cmd = Command::new("tail");
+
+    if follow {
+        cmd.arg("-f");
+    }
+
+    cmd.arg("-n").arg(lines.to_string());
+    cmd.arg(&log_file_path);
+
+    // Execute tail - replace current process on Unix, or just run it on other platforms
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let err = cmd.exec();
+        // exec only returns if there's an error
+        Err(anyhow::anyhow!("Failed to exec tail: {}", err))
+    }
+
+    #[cfg(not(unix))]
+    {
+        let status = cmd.status().context("Failed to run tail command")?;
+        if !status.success() {
+            anyhow::bail!("tail command failed with status: {}", status);
+        }
+        Ok(())
+    }
+}
+
+async fn run_daemon_mode(config: Config) -> Result<()> {
+    use daemonize::Daemonize;
+    use std::fs;
+
+    // Ensure daemon directory exists
+    let daemon_dir = config.daemon_dir()?;
+    fs::create_dir_all(&daemon_dir)
+        .with_context(|| format!("Failed to create daemon directory: {}", daemon_dir.display()))?;
+
+    let log_file_path = config.log_file()?;
+    let pid_file_path = config.pid_file()?;
+
+    // Print info before daemonizing (so user sees it)
+    println!("Starting daemon...");
+    println!("Log file: {}", log_file_path.display());
+    println!("PID file: {}", pid_file_path.display());
+
+    // Create log file appender
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_file_path)
+        .with_context(|| format!("Failed to open log file: {}", log_file_path.display()))?;
+
+    // Configure daemonize
+    let daemonize = Daemonize::new()
+        .pid_file(&pid_file_path)
+        .working_directory(&daemon_dir)
+        .stdout(log_file.try_clone()?)
+        .stderr(log_file);
+
+    // Fork into background
+    daemonize.start().context("Failed to daemonize")?;
+
+    // After this point, we're in the daemon process
+    // Reconfigure tracing to write to the log file
+    let log_file_for_tracing = config.log_file()?;
+    let file_appender = tracing_appender::rolling::never(
+        log_file_for_tracing.parent().unwrap(),
+        log_file_for_tracing.file_name().unwrap(),
+    );
+
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "pleb=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer().with_writer(file_appender))
+        .init();
+
+    tracing::info!("Daemon started with PID: {}", std::process::id());
+
+    // Run the orchestrator
+    let mut orchestrator = Orchestrator::new(config).await?;
+    orchestrator.run().await?;
+
+    Ok(())
+}
+
 async fn handle_command(command: Commands, config: Config) -> Result<()> {
     match command {
-        Commands::Watch => {
-            let mut orchestrator = Orchestrator::new(config).await?;
-            orchestrator.run().await?;
+        Commands::Watch { daemon } => {
+            if daemon {
+                run_daemon_mode(config).await?;
+            } else {
+                let mut orchestrator = Orchestrator::new(config).await?;
+                orchestrator.run().await?;
+            }
+        }
+        Commands::Log { follow, lines } => {
+            handle_log_command(follow, lines, config)?;
         }
         Commands::List => {
             let tmux_manager = TmuxManager::new(&config.tmux);
