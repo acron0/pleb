@@ -88,3 +88,71 @@ impl TemplateEngine {
             })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::github::IssueState;
+
+    fn make_test_issue(number: u64, title: &str, body: &str) -> Issue {
+        Issue {
+            number,
+            title: title.to_string(),
+            body: body.to_string(),
+            labels: vec!["pleb:ready".to_string()],
+            state: IssueState::Open,
+            html_url: format!("https://github.com/owner/repo/issues/{}", number),
+        }
+    }
+
+    #[test]
+    fn test_issue_context_from_issue() {
+        let issue = make_test_issue(42, "Fix the bug", "This bug needs fixing");
+        let ctx = IssueContext::from_issue(&issue, "pleb/issue-42", Path::new("/worktrees/issue-42"));
+
+        assert_eq!(ctx.issue_number, 42);
+        assert_eq!(ctx.title, "Fix the bug");
+        assert_eq!(ctx.body, "This bug needs fixing");
+        assert_eq!(ctx.branch_name, "pleb/issue-42");
+        assert_eq!(ctx.worktree_path, "/worktrees/issue-42");
+        assert_eq!(ctx.html_url, "https://github.com/owner/repo/issues/42");
+    }
+
+    #[test]
+    fn test_issue_context_with_empty_body() {
+        let issue = make_test_issue(123, "No description issue", "");
+        let ctx = IssueContext::from_issue(&issue, "pleb/issue-123", Path::new("/tmp/wt"));
+
+        assert_eq!(ctx.issue_number, 123);
+        assert_eq!(ctx.body, "");
+    }
+
+    #[test]
+    fn test_issue_context_with_special_characters() {
+        let issue = make_test_issue(
+            999,
+            "Handle émojis 🎉 and spëcial chars",
+            "Body with\nnewlines\tand\ttabs",
+        );
+        let ctx = IssueContext::from_issue(
+            &issue,
+            "pleb/issue-999",
+            Path::new("/path/with spaces/issue-999"),
+        );
+
+        assert_eq!(ctx.title, "Handle émojis 🎉 and spëcial chars");
+        assert_eq!(ctx.body, "Body with\nnewlines\tand\ttabs");
+        assert_eq!(ctx.worktree_path, "/path/with spaces/issue-999");
+    }
+
+    #[test]
+    fn test_issue_context_serializes_to_json() {
+        let issue = make_test_issue(1, "Test", "Body");
+        let ctx = IssueContext::from_issue(&issue, "branch", Path::new("/path"));
+
+        // IssueContext derives Serialize, so it should serialize to JSON
+        let json = serde_json::to_string(&ctx).expect("Should serialize");
+        assert!(json.contains("\"issue_number\":1"));
+        assert!(json.contains("\"title\":\"Test\""));
+    }
+}
