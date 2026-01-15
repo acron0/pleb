@@ -10,10 +10,10 @@ The current Claude-based development workflow requires repetitive manual setup (
 
 How we know it worked:
 
-- [ ] Can manage 10 concurrent features (up from 5 manual)
-- [ ] Zero manual setup per issue (worktree + tmux + claude invocation automated)
-- [ ] External visibility via GitHub labels (no tmux polling required)
-- [ ] Can attach to any session anytime to watch/interact
+- [x] Can manage 10 concurrent features (up from 5 manual)
+- [x] Zero manual setup per issue (worktree + tmux + claude invocation automated)
+- [x] External visibility via GitHub labels (no tmux polling required)
+- [x] Can attach to any session anytime to watch/interact
 
 ## Constraints
 
