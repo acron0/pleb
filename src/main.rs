@@ -2,6 +2,7 @@ mod claude;
 mod cli;
 mod config;
 mod github;
+mod hooks;
 mod state;
 mod templates;
 mod tmux;
@@ -12,7 +13,7 @@ use clap::Parser;
 use std::path::Path;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use cli::{Cli, Commands, ConfigAction};
+use cli::{Cli, Commands, ConfigAction, HooksAction};
 use config::Config;
 use tmux::TmuxManager;
 use github::GitHubClient;
@@ -37,6 +38,10 @@ async fn main() -> Result<()> {
     match &cli.command {
         Commands::Config { action } => {
             handle_config_command(action)?;
+        }
+        Commands::Hooks { action } => {
+            // Hooks commands don't need config
+            handle_hooks_command(action.clone())?;
         }
         _ => {
             // For all other commands, load and validate config
@@ -243,6 +248,18 @@ impl Orchestrator {
         // Create worktree
         let worktree_path = self.worktree.create_worktree(issue.number).await?;
 
+        // Install Claude Code hooks in worktree
+        if let Err(e) = hooks::install_hooks(&worktree_path) {
+            tracing::warn!(
+                "Failed to install hooks for issue #{}: {}",
+                issue.number,
+                e
+            );
+            // Continue anyway - hooks are nice to have but not critical
+        } else {
+            tracing::info!("Installed Claude Code hooks for issue #{}", issue.number);
+        }
+
         // Create tmux window
         self.tmux.create_window(issue.number, &worktree_path).await?;
 
@@ -273,6 +290,129 @@ impl Orchestrator {
         );
 
         Ok(())
+    }
+}
+
+async fn handle_transition_command(
+    issue_number: u64,
+    state_str: &str,
+    config: Config,
+) -> Result<()> {
+    // Parse state string
+    let target_state = parse_state(state_str)?;
+
+    // Create GitHub client
+    let github = GitHubClient::new(&config.github).await?;
+
+    // Fetch the issue to determine current state
+    let issue = github.get_issue(issue_number).await?;
+    let current_state = github.get_pleb_state(&issue, &config.labels);
+
+    // Transition to target state
+    if let Some(from_state) = current_state {
+        github
+            .transition_state(issue_number, from_state, target_state, &config.labels)
+            .await?;
+    } else {
+        // No current pleb label - just add the target state label
+        let target_label = match target_state {
+            PlebState::Ready => &config.labels.ready,
+            PlebState::Provisioning => &config.labels.provisioning,
+            PlebState::Waiting => &config.labels.waiting,
+            PlebState::Working => &config.labels.working,
+            PlebState::Done => &config.labels.done,
+        };
+        github.add_label(issue_number, target_label).await?;
+    }
+
+    println!("Issue #{} transitioned to {:?}", issue_number, target_state);
+
+    Ok(())
+}
+
+async fn handle_cc_run_hook_command(event: &str, config: Config) -> Result<()> {
+    // Read JSON from stdin
+    use std::io::Read;
+    let mut stdin_content = String::new();
+    std::io::stdin()
+        .read_to_string(&mut stdin_content)
+        .context("Failed to read from stdin")?;
+
+    // Parse JSON to extract cwd
+    let json: serde_json::Value =
+        serde_json::from_str(&stdin_content).context("Failed to parse JSON from stdin")?;
+
+    let cwd = json["cwd"]
+        .as_str()
+        .context("Missing or invalid 'cwd' field in hook payload")?;
+
+    // Extract issue number from path
+    let issue_number = match hooks::extract_issue_number_from_path(cwd) {
+        Some(num) => num,
+        None => {
+            // Not a pleb-managed directory, exit silently
+            tracing::debug!("No issue number found in path: {}", cwd);
+            return Ok(());
+        }
+    };
+
+    // Map event to target state
+    let target_state = match event {
+        "stop" => PlebState::Waiting,
+        "user-prompt" => PlebState::Working,
+        _ => {
+            tracing::warn!("Unknown hook event: {}", event);
+            return Ok(());
+        }
+    };
+
+    // Create GitHub client and transition
+    let github = GitHubClient::new(&config.github).await?;
+    let issue = github.get_issue(issue_number).await?;
+    let current_state = github.get_pleb_state(&issue, &config.labels);
+
+    if let Some(from_state) = current_state {
+        github
+            .transition_state(issue_number, from_state, target_state, &config.labels)
+            .await?;
+        tracing::info!(
+            "Hook '{}' transitioned issue #{} to {:?}",
+            event,
+            issue_number,
+            target_state
+        );
+    }
+
+    Ok(())
+}
+
+fn handle_hooks_command(action: HooksAction) -> Result<()> {
+    match action {
+        HooksAction::Generate => {
+            let json = hooks::generate_hooks_json()?;
+            println!("{}", json);
+        }
+        HooksAction::Install => {
+            let current_dir = std::env::current_dir().context("Failed to get current directory")?;
+            hooks::install_hooks(&current_dir)?;
+            println!("Hooks installed to .claude/settings.json");
+        }
+    }
+
+    Ok(())
+}
+
+fn parse_state(state_str: &str) -> Result<PlebState> {
+    match state_str.to_lowercase().as_str() {
+        "ready" => Ok(PlebState::Ready),
+        "provisioning" => Ok(PlebState::Provisioning),
+        "waiting" => Ok(PlebState::Waiting),
+        "working" => Ok(PlebState::Working),
+        "done" => Ok(PlebState::Done),
+        _ => anyhow::bail!(
+            "Invalid state '{}'. Valid states: ready, provisioning, waiting, working, done",
+            state_str
+        ),
     }
 }
 
@@ -310,6 +450,18 @@ async fn handle_command(command: Commands, config: Config) -> Result<()> {
             if !status.success() {
                 anyhow::bail!("Failed to attach to session '{}'", config.tmux.session_name);
             }
+        }
+        Commands::Transition {
+            issue_number,
+            state,
+        } => {
+            handle_transition_command(issue_number, &state, config).await?;
+        }
+        Commands::CcRunHook { event } => {
+            handle_cc_run_hook_command(&event, config).await?;
+        }
+        Commands::Hooks { action } => {
+            handle_hooks_command(action)?;
         }
         Commands::Config { .. } => {
             // Already handled above, shouldn't reach here

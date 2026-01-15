@@ -56,11 +56,11 @@ Plans:
 ### Phase 5: Hooks & Skills
 **Goal**: Integration points for Claude Code state transitions and convenience commands
 **Depends on**: Phase 4
-**Plans**: TBD after planning
+**Status**: In progress
 
 Plans:
-- [ ] 05-01: Claude Code hooks for label state transitions
-- [ ] 05-02: Built-in skills (/shipit, etc.)
+- [x] 05-01: Hook Infrastructure (`pleb transition`, `pleb cc-run-hook`, `pleb hooks generate|install`, auto-install during provisioning)
+- [ ] 05-02: Slash Commands (`/pleb-shipit`, `/pleb-abandon`, `/pleb-status`)
 
 ## Progress
 
@@ -70,4 +70,4 @@ Plans:
 | 2. GitHub Integration | 3/3 | Complete | 2026-01-13 |
 | 3. Session Management | 2/2 | Complete | 2026-01-13 |
 | 4. Orchestration | 4/4 | Complete | 2026-01-14 |
-| 5. Hooks & Skills | 0/2 | Not started | - |
+| 5. Hooks & Skills | 1/2 | In progress | - |

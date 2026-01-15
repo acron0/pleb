@@ -23,11 +23,40 @@ pub enum Commands {
     #[command(about = "Attach to the pleb tmux session")]
     Attach,
 
+    #[command(about = "Transition issue to a new state")]
+    Transition {
+        /// Issue number
+        issue_number: u64,
+        /// Target state (ready, provisioning, waiting, working, done)
+        state: String,
+    },
+
+    #[command(about = "Hook invoked by Claude Code on events")]
+    CcRunHook {
+        /// Hook event (stop, user-prompt)
+        event: String,
+    },
+
+    #[command(about = "Manage Claude Code hooks")]
+    Hooks {
+        #[command(subcommand)]
+        action: HooksAction,
+    },
+
     #[command(about = "Manage configuration")]
     Config {
         #[command(subcommand)]
         action: ConfigAction,
     },
+}
+
+#[derive(Subcommand, Clone)]
+pub enum HooksAction {
+    #[command(about = "Generate hooks JSON")]
+    Generate,
+
+    #[command(about = "Install hooks to current directory")]
+    Install,
 }
 
 #[derive(Subcommand)]
