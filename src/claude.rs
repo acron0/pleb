@@ -41,10 +41,11 @@ impl ClaudeRunner {
 
         // Build claude command with prompt file as argument
         // Using @/path/to/file syntax to read prompt from file
+        // Note: --permission-mode must come before other flags
         let mut cmd_parts = vec![self.command.clone()];
-        cmd_parts.extend(self.args.iter().cloned());
         cmd_parts.push("--permission-mode".to_string());
         cmd_parts.push("plan".to_string());
+        cmd_parts.extend(self.args.iter().cloned());
         cmd_parts.push(format!("@{}", prompt_file.display()));
         let claude_command = cmd_parts.join(" ");
 
