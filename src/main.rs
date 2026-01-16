@@ -485,13 +485,27 @@ impl Orchestrator {
         std::fs::create_dir_all(&issue_dir)
             .with_context(|| format!("Failed to create issue directory: {}", issue_dir.display()))?;
 
-        // Process issue body: download images/videos and rewrite URLs to local paths
-        let processed_body = media::process_issue_body(&issue.body, &issue_dir, &self.media_client)
-            .await
+        // Fetch body_html which contains signed URLs for private attachments
+        // GitHub user-attachments require this special endpoint to get downloadable URLs
+        let body_html = self.github.get_issue_body_html(issue.number).await
             .unwrap_or_else(|e| {
-                tracing::warn!("Failed to process media in issue body: {}. Using original body.", e);
-                issue.body.clone()
+                tracing::warn!("Failed to fetch body_html for issue #{}: {}. Media may not download.", issue.number, e);
+                String::new()
             });
+
+        // Process issue body: extract media from body_html (which has signed URLs),
+        // download them, and rewrite the original body with local paths
+        let processed_body = media::process_issue_body_with_html(
+            &issue.body,
+            &body_html,
+            &issue_dir,
+            &self.media_client,
+        )
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("Failed to process media in issue body: {}. Using original body.", e);
+            issue.body.clone()
+        });
 
         // Create a modified issue with processed body for the template
         let processed_issue = github::Issue {

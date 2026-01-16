@@ -311,4 +311,38 @@ impl GitHubClient {
 
         Ok(user.login)
     }
+
+    /// Fetch the issue body_html which contains signed URLs for private attachments.
+    ///
+    /// GitHub user-attachments (images/videos uploaded to issues) require special
+    /// authentication. When fetching with `Accept: application/vnd.github.full+json`,
+    /// GitHub returns body_html with short-lived JWT tokens in the image URLs.
+    pub async fn get_issue_body_html(&self, issue_number: u64) -> Result<String> {
+        let route = format!("/repos/{}/{}/issues/{}", self.owner, self.repo, issue_number);
+
+        let response: serde_json::Value = self
+            .client
+            .get(&route, Some(&[("Accept", "application/vnd.github.full+json")]))
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to fetch body_html for issue #{} from {}/{}",
+                    issue_number, self.owner, self.repo
+                )
+            })?;
+
+        let body_html = response
+            .get("body_html")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        tracing::debug!(
+            "Fetched body_html for issue #{} ({} chars)",
+            issue_number,
+            body_html.len()
+        );
+
+        Ok(body_html)
+    }
 }

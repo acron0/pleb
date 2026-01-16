@@ -212,6 +212,10 @@ pub async fn download_media(
 ///
 /// Images are replaced with local file paths.
 /// Videos are replaced with local file paths plus a note that Claude can't read them.
+///
+/// Note: For GitHub issues, prefer `process_issue_body_with_html` which handles
+/// signed URLs for private attachments.
+#[allow(dead_code)]
 pub async fn process_issue_body(
     body: &str,
     dest_dir: &Path,
@@ -262,22 +266,116 @@ pub async fn process_issue_body(
     Ok(processed_body)
 }
 
+/// Extract the asset ID from a GitHub user-attachments URL.
+///
+/// Examples:
+/// - `https://github.com/user-attachments/assets/6ad6bd37-7044-4a5d-8c74-cb7576e415c2`
+/// - `https://private-user-images.githubusercontent.com/.../535780376-6ad6bd37-7044-4a5d-8c74-cb7576e415c2.png?jwt=...`
+///
+/// Returns the UUID portion (e.g., `6ad6bd37-7044-4a5d-8c74-cb7576e415c2`)
+fn extract_asset_id(url: &str) -> Option<String> {
+    // Pattern: UUID format (8-4-4-4-12 hex chars)
+    let uuid_regex = Regex::new(r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
+        .unwrap();
+
+    uuid_regex
+        .captures(url)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
+}
+
+/// Process an issue body using signed URLs from body_html.
+///
+/// GitHub user-attachments (images uploaded via the web UI) require special handling:
+/// - The raw body contains URLs like `https://github.com/user-attachments/assets/UUID`
+/// - These URLs return 404 when accessed with API tokens
+/// - The body_html (fetched with `Accept: application/vnd.github.full+json`) contains
+///   signed URLs with JWT tokens that can be downloaded
+///
+/// This function:
+/// 1. Extracts media from body_html (which has signed URLs)
+/// 2. Downloads using those signed URLs
+/// 3. Rewrites the original body with local file paths
+pub async fn process_issue_body_with_html(
+    body: &str,
+    body_html: &str,
+    dest_dir: &Path,
+    client: &reqwest::Client,
+) -> Result<String> {
+    // Extract media from body_html (has signed URLs we can actually download)
+    let html_items = extract_media_urls(body_html);
+
+    if html_items.is_empty() {
+        return Ok(body.to_string());
+    }
+
+    tracing::info!(
+        "Found {} media items in body_html with signed URLs",
+        html_items.len()
+    );
+
+    // Extract media from original body (has URLs we need to replace)
+    let body_items = extract_media_urls(body);
+
+    // Build a map from asset ID to signed URL
+    let mut signed_urls: std::collections::HashMap<String, &MediaItem> =
+        std::collections::HashMap::new();
+    for item in &html_items {
+        if let Some(asset_id) = extract_asset_id(&item.url) {
+            signed_urls.insert(asset_id, item);
+        }
+    }
+
+    let mut processed_body = body.to_string();
+    let mut download_index = 0;
+
+    for body_item in &body_items {
+        // Try to find the signed URL for this asset
+        let download_item = if let Some(asset_id) = extract_asset_id(&body_item.url) {
+            signed_urls.get(&asset_id).copied().unwrap_or(body_item)
+        } else {
+            body_item
+        };
+
+        // Download using the signed URL (or original if no signed URL found)
+        match download_media(client, download_item, dest_dir, download_index).await {
+            Ok(local_path) => {
+                let replacement = match body_item.media_type {
+                    MediaType::Image => local_path.display().to_string(),
+                    MediaType::Video => {
+                        format!("{} [Video - not readable by Claude]", local_path.display())
+                    }
+                };
+
+                processed_body = processed_body.replace(&body_item.original_match, &replacement);
+                tracing::info!(
+                    "Downloaded {} -> {}",
+                    body_item.url,
+                    local_path.display()
+                );
+                download_index += 1;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to download {}: {}. Keeping original URL.",
+                    body_item.url,
+                    e
+                );
+            }
+        }
+    }
+
+    Ok(processed_body)
+}
+
 /// Create an HTTP client configured for GitHub asset downloads.
 ///
-/// Uses the provided token for authentication (needed for private repo assets).
-pub fn create_media_client(github_token: &str) -> Result<reqwest::Client> {
+/// Note: For GitHub user-attachments (private repo images), the signed URLs
+/// from body_html contain JWT tokens and don't need additional auth headers.
+/// This client is kept simple intentionally.
+pub fn create_media_client(_github_token: &str) -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .user_agent("pleb-media-downloader")
-        .default_headers({
-            let mut headers = reqwest::header::HeaderMap::new();
-            headers.insert(
-                reqwest::header::AUTHORIZATION,
-                format!("Bearer {}", github_token)
-                    .parse()
-                    .context("Invalid GitHub token for header")?,
-            );
-            headers
-        })
         .build()
         .context("Failed to create HTTP client for media downloads")
 }
@@ -430,5 +528,29 @@ mod tests {
             get_extension("https://example.com/no-extension", None),
             "png"
         );
+    }
+
+    #[test]
+    fn test_extract_asset_id_from_user_attachments() {
+        let url = "https://github.com/user-attachments/assets/6ad6bd37-7044-4a5d-8c74-cb7576e415c2";
+        assert_eq!(
+            extract_asset_id(url),
+            Some("6ad6bd37-7044-4a5d-8c74-cb7576e415c2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_asset_id_from_signed_url() {
+        let url = "https://private-user-images.githubusercontent.com/812199/535780376-6ad6bd37-7044-4a5d-8c74-cb7576e415c2.png?jwt=eyJ...";
+        assert_eq!(
+            extract_asset_id(url),
+            Some("6ad6bd37-7044-4a5d-8c74-cb7576e415c2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_asset_id_no_uuid() {
+        let url = "https://example.com/image.png";
+        assert_eq!(extract_asset_id(url), None);
     }
 }
