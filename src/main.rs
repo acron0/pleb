@@ -11,6 +11,7 @@ mod worktree;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use std::collections::HashSet;
 use std::path::Path;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -112,7 +113,7 @@ fn load_config(path: &str) -> Result<Config> {
 }
 
 /// Orchestrator that manages the main daemon loop
-/// State is derived from GitHub labels - no in-memory tracking needed
+/// State is derived from GitHub labels - minimal in-memory tracking
 struct Orchestrator {
     github: GitHubClient,
     worktree: WorktreeManager,
@@ -120,6 +121,8 @@ struct Orchestrator {
     claude: ClaudeRunner,
     templates: TemplateEngine,
     config: Config,
+    /// Track issues we've already logged as "skipping" to avoid log spam
+    logged_skips: HashSet<u64>,
 }
 
 impl Orchestrator {
@@ -137,6 +140,7 @@ impl Orchestrator {
             claude,
             templates,
             config,
+            logged_skips: HashSet::new(),
         })
     }
 
@@ -213,17 +217,32 @@ impl Orchestrator {
                 "No new issues with {} label",
                 self.config.labels.ready
             );
+            // Clear logged_skips since no issues are in ready state
+            self.logged_skips.clear();
             return Ok(());
         }
+
+        // Collect current issue numbers for cleanup
+        let current_issue_numbers: HashSet<u64> = issues.iter().map(|i| i.number).collect();
+
+        // Clean up logged_skips: remove issues no longer in ready state
+        self.logged_skips.retain(|n| current_issue_numbers.contains(n));
 
         // Process each issue that doesn't already have a tmux window
         let mut processed_count = 0;
         for issue in issues {
             // Check if tmux window already exists (idempotent check)
             if self.tmux.window_exists(issue.number).await? {
-                tracing::info!("Issue #{} already has tmux window, skipping", issue.number);
+                // Only log skip once per issue
+                if !self.logged_skips.contains(&issue.number) {
+                    tracing::info!("Issue #{} already has tmux window, skipping", issue.number);
+                    self.logged_skips.insert(issue.number);
+                }
                 continue;
             }
+
+            // Issue is being processed, remove from logged_skips if present
+            self.logged_skips.remove(&issue.number);
 
             // Process this new issue
             if let Err(e) = self.process_issue(&issue).await {
@@ -654,6 +673,7 @@ fn run_daemon_mode(config: Config) -> Result<()> {
         .with(tracing_subscriber::fmt::layer().with_writer(file_appender))
         .init();
 
+    tracing::info!("========================================");
     tracing::info!("Daemon started with PID: {}", std::process::id());
 
     // NOW create tokio runtime (after fork)
