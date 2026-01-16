@@ -299,4 +299,16 @@ impl GitHubClient {
         // No pleb label found
         None
     }
+
+    /// Get the username of the authenticated user
+    pub async fn get_authenticated_user(&self) -> Result<String> {
+        let user = self
+            .client
+            .current()
+            .user()
+            .await
+            .context("Failed to get authenticated user")?;
+
+        Ok(user.login)
+    }
 }

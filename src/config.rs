@@ -11,6 +11,8 @@ pub struct Config {
     pub prompts: PromptsConfig,
     pub watch: WatchConfig,
     pub tmux: TmuxConfig,
+    #[serde(default)]
+    pub branch: BranchConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -131,6 +133,16 @@ pub struct TmuxConfig {
 }
 
 fn default_session_name() -> String {
+    "pleb".to_string()
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct BranchConfig {
+    #[serde(default = "default_branch_suffix")]
+    pub suffix: String,
+}
+
+fn default_branch_suffix() -> String {
     "pleb".to_string()
 }
 
@@ -290,6 +302,7 @@ repo = "testrepo"
 [prompts]
 [watch]
 [tmux]
+[branch]
 "#;
 
     const FULL_CONFIG: &str = r#"
@@ -323,6 +336,9 @@ poll_interval_secs = 30
 
 [tmux]
 session_name = "custom-session"
+
+[branch]
+suffix = "custom-suffix"
 "#;
 
     // ===================
@@ -348,6 +364,7 @@ session_name = "custom-session"
         assert_eq!(config.paths.repo_dir, PathBuf::from("/custom/repo"));
         assert_eq!(config.watch.poll_interval_secs, 30);
         assert_eq!(config.tmux.session_name, "custom-session");
+        assert_eq!(config.branch.suffix, "custom-suffix");
     }
 
     #[test]
@@ -426,6 +443,9 @@ repo = "testrepo"
 
         // Tmux defaults
         assert_eq!(config.tmux.session_name, "pleb");
+
+        // Branch defaults
+        assert_eq!(config.branch.suffix, "pleb");
     }
 
     // ===================

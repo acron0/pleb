@@ -24,6 +24,49 @@ use claude::ClaudeRunner;
 use templates::{TemplateEngine, IssueContext};
 use state::PlebState;
 
+/// Convert a string to a URL-safe slug
+/// - Converts to lowercase
+/// - Replaces non-alphanumeric characters with hyphens
+/// - Collapses multiple hyphens into one
+/// - Trims hyphens from start/end
+/// - Truncates to max_len characters
+fn slugify(s: &str, max_len: usize) -> String {
+    let slug: String = s
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+
+    // Collapse multiple hyphens and trim
+    let mut result = String::new();
+    let mut last_was_hyphen = true; // Start true to trim leading hyphens
+    for c in slug.chars() {
+        if c == '-' {
+            if !last_was_hyphen {
+                result.push(c);
+                last_was_hyphen = true;
+            }
+        } else {
+            result.push(c);
+            last_was_hyphen = false;
+        }
+    }
+
+    // Trim trailing hyphen and truncate
+    let result = result.trim_end_matches('-');
+    if result.len() > max_len {
+        // Find last hyphen before max_len to avoid cutting words
+        let truncated = &result[..max_len];
+        if let Some(last_hyphen) = truncated.rfind('-') {
+            truncated[..last_hyphen].to_string()
+        } else {
+            truncated.to_string()
+        }
+    } else {
+        result.to_string()
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -121,6 +164,8 @@ struct Orchestrator {
     claude: ClaudeRunner,
     templates: TemplateEngine,
     config: Config,
+    /// The authenticated GitHub username
+    gh_username: String,
     /// Track issues we've already logged as "skipping" to avoid log spam
     logged_skips: HashSet<u64>,
 }
@@ -133,6 +178,10 @@ impl Orchestrator {
         let claude = ClaudeRunner::new(&config.claude, &config.tmux);
         let templates = TemplateEngine::new(&config.prompts)?;
 
+        // Fetch authenticated user
+        let gh_username = github.get_authenticated_user().await?;
+        tracing::info!("Authenticated as GitHub user: {}", gh_username);
+
         Ok(Self {
             github,
             worktree,
@@ -140,6 +189,7 @@ impl Orchestrator {
             claude,
             templates,
             config,
+            gh_username,
             logged_skips: HashSet::new(),
         })
     }
@@ -273,8 +323,36 @@ impl Orchestrator {
             )
             .await?;
 
+        // Construct branch/worktree name: {issue_number}-{slug}_{username}_{suffix}
+        let slug = slugify(&issue.title, 30);
+        let branch_name = format!(
+            "{}-{}_{}_{}",
+            issue.number,
+            slug,
+            self.gh_username,
+            self.config.branch.suffix
+        );
+
         // Create worktree
-        let worktree_path = self.worktree.create_worktree(issue.number).await?;
+        let worktree_path = self
+            .worktree
+            .create_worktree(issue.number, &branch_name, &branch_name)
+            .await?;
+
+        // Copy pleb.toml to worktree if it exists (may not be in source control)
+        let pleb_toml_src = Path::new("pleb.toml");
+        if pleb_toml_src.exists() {
+            let pleb_toml_dest = worktree_path.join("pleb.toml");
+            if let Err(e) = std::fs::copy(pleb_toml_src, &pleb_toml_dest) {
+                tracing::warn!(
+                    "Failed to copy pleb.toml to worktree for issue #{}: {}",
+                    issue.number,
+                    e
+                );
+            } else {
+                tracing::debug!("Copied pleb.toml to worktree for issue #{}", issue.number);
+            }
+        }
 
         // Install Claude Code hooks in worktree
         if let Err(e) = hooks::install_hooks(&worktree_path) {
@@ -292,14 +370,14 @@ impl Orchestrator {
         self.tmux.create_window(issue.number, &worktree_path).await?;
 
         // Render prompt with issue context
-        let branch_name = format!("pleb/issue-{}", issue.number);
         let context = IssueContext::from_issue(issue, &branch_name, &worktree_path);
         let prompt = self
             .templates
             .render(&self.config.prompts.new_issue, &context)?;
 
         // Invoke Claude
-        self.claude.invoke(issue.number, &prompt).await?;
+        let daemon_dir = self.config.daemon_dir()?;
+        self.claude.invoke(issue.number, &prompt, &daemon_dir).await?;
 
         // Transition label: provisioning -> working
         self.github

@@ -31,11 +31,16 @@ impl WorktreeManager {
     }
 
     /// Create a worktree for an issue (idempotent)
-    /// Creates branch `pleb/issue-{number}` and worktree at `worktree_base/issue-{number}`
+    /// Creates the specified branch and worktree at `worktree_base/{worktree_name}`
     /// Handles edge cases: orphaned directories, stale git tracking, existing branches
-    pub async fn create_worktree(&self, issue_number: u64) -> Result<PathBuf> {
-        let worktree_path = self.worktree_base.join(format!("issue-{}", issue_number));
-        let branch_name = format!("pleb/issue-{}", issue_number);
+    pub async fn create_worktree(
+        &self,
+        issue_number: u64,
+        branch_name: &str,
+        worktree_name: &str,
+    ) -> Result<PathBuf> {
+        let worktree_path = self.worktree_base.join(worktree_name);
+        let branch_name = branch_name.to_string();
 
         // 1. Check git's worktree tracking (not just filesystem)
         let is_registered = self.is_worktree_registered(issue_number).await?;
@@ -171,29 +176,41 @@ impl WorktreeManager {
     }
 
     /// Get the path to a worktree for an issue (if it exists)
+    /// Searches for directories starting with "{issue_number}-"
     pub fn get_worktree_path(&self, issue_number: u64) -> Option<PathBuf> {
-        let path = self.worktree_base.join(format!("issue-{}", issue_number));
-        if path.exists() {
-            Some(path)
-        } else {
-            None
+        let prefix = format!("{}-", issue_number);
+
+        // Search for directory starting with issue number
+        if let Ok(entries) = std::fs::read_dir(&self.worktree_base) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.starts_with(&prefix) && entry.path().is_dir() {
+                        return Some(entry.path());
+                    }
+                }
+            }
         }
+
+        None
     }
 
     /// Remove a worktree for an issue
     pub async fn remove_worktree(&self, issue_number: u64) -> Result<()> {
-        let worktree_path = self.worktree_base.join(format!("issue-{}", issue_number));
-        let branch_name = format!("pleb/issue-{}", issue_number);
+        // Find the worktree path by searching for directories starting with issue number
+        let worktree_path = match self.get_worktree_path(issue_number) {
+            Some(path) => path,
+            None => {
+                tracing::debug!("Worktree for issue #{} doesn't exist", issue_number);
+                return Ok(());
+            }
+        };
 
-        // 1. Get worktree path
-        if !worktree_path.exists() {
-            tracing::debug!(
-                "Worktree for issue #{} doesn't exist at {}",
-                issue_number,
-                worktree_path.display()
-            );
-            return Ok(());
-        }
+        // Extract branch name from worktree directory name
+        let worktree_name = worktree_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        let branch_name = worktree_name.to_string();
 
         // 2. Run: git worktree remove {path} --force
         let remove_output = Command::new("git")
@@ -288,14 +305,16 @@ impl WorktreeManager {
             if line.starts_with("worktree ") {
                 let path = line.trim_start_matches("worktree ").trim();
 
-                // 3. Extract issue numbers from paths (issue-123 -> 123)
+                // 3. Extract issue numbers from paths
+                // Format: {issue_number}-{slug}_{user}_{suffix}
                 if path.starts_with(worktree_base_str.as_ref()) {
                     // Extract the directory name from the path
                     if let Some(dir_name) = std::path::Path::new(path)
                         .file_name()
                         .and_then(|n| n.to_str())
                     {
-                        if let Some(issue_str) = dir_name.strip_prefix("issue-") {
+                        // Parse issue number from start of directory name (before first '-')
+                        if let Some(issue_str) = dir_name.split('-').next() {
                             if let Ok(issue_number) = issue_str.parse::<u64>() {
                                 issue_numbers.push(issue_number);
                             }
@@ -494,8 +513,9 @@ mod tests {
     #[test]
     fn test_get_worktree_path_with_existing_directory() {
         // Use temp directory with a test subdirectory
+        // New format: {issue_number}-{slug}_{user}_{suffix}
         let temp_base = env::temp_dir().join("pleb-test-worktrees");
-        let issue_dir = temp_base.join("issue-789");
+        let issue_dir = temp_base.join("789-test-issue_user_pleb");
 
         // Create the directory
         std::fs::create_dir_all(&issue_dir).unwrap();
@@ -505,7 +525,7 @@ mod tests {
 
         let path = manager.get_worktree_path(789);
         assert!(path.is_some());
-        assert!(path.unwrap().ends_with("issue-789"));
+        assert!(path.unwrap().ends_with("789-test-issue_user_pleb"));
 
         // Cleanup
         std::fs::remove_dir_all(&temp_base).unwrap();

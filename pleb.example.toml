@@ -67,3 +67,9 @@ poll_interval_secs = 5
 # Name of the tmux session where all issue windows will live
 # All issues run in windows within this single session
 session_name = "pleb"
+
+[branch]
+# Suffix appended to branch/worktree names
+# Format: {issue_number}-{issue_title_slug}_{github_username}_{suffix}
+# Example: 123-fix-login-bug_acron0_pleb
+suffix = "pleb"
