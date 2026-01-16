@@ -36,9 +36,10 @@ impl ClaudeRunner {
         std::fs::write(&temp_file, prompt)
             .with_context(|| format!("Failed to write prompt to temp file: {}", temp_file))?;
 
-        // Build claude command
+        // Build claude command (always start in plan mode for issue-driven work)
         let mut cmd_parts = vec![self.command.clone()];
         cmd_parts.extend(self.args.iter().cloned());
+        cmd_parts.push("--plan".to_string());
         let claude_command = cmd_parts.join(" ");
 
         tracing::info!(
@@ -67,7 +68,10 @@ impl ClaudeRunner {
             .await
             .context("Failed to paste prompt buffer")?;
 
-        // Step 5: Send Enter to submit the prompt
+        // Step 5: Small delay to ensure paste is processed
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        // Step 6: Send Enter to submit the prompt
         Command::new("tmux")
             .args(["send-keys", "-t", &target, "Enter"])
             .status()
