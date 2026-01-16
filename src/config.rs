@@ -190,6 +190,16 @@ impl Config {
             "github.token_env must not be empty"
         );
 
+        // Validate that the GitHub token environment variable exists and is non-empty
+        let token = std::env::var(&self.github.token_env).ok();
+        anyhow::ensure!(
+            token.as_ref().map(|t| !t.is_empty()).unwrap_or(false),
+            "GitHub token not found or empty in environment variable '{}'. \
+             Please set it with: export {}=<your-token>",
+            self.github.token_env,
+            self.github.token_env
+        );
+
         // Validate labels don't conflict
         let labels = [
             &self.labels.ready,
@@ -485,6 +495,9 @@ token_env = ""
 
     #[test]
     fn test_validate_duplicate_labels() {
+        // Set token so we reach the label validation
+        std::env::set_var("GITHUB_TOKEN", "test-token");
+
         let toml = r#"
 [github]
 owner = "testowner"
@@ -508,6 +521,9 @@ done = "same-label"
 
     #[test]
     fn test_validate_zero_poll_interval() {
+        // Set token so we reach the poll interval validation
+        std::env::set_var("GITHUB_TOKEN", "test-token");
+
         let toml = r#"
 [github]
 owner = "testowner"
@@ -529,6 +545,30 @@ poll_interval_secs = 0
             .unwrap_err()
             .to_string()
             .contains("poll_interval_secs"));
+    }
+
+    #[test]
+    fn test_validate_missing_token_env_var() {
+        // Use a unique env var name that definitely doesn't exist
+        let toml = r#"
+[github]
+owner = "testowner"
+repo = "testrepo"
+token_env = "PLEB_TEST_NONEXISTENT_TOKEN_VAR"
+
+[labels]
+[claude]
+[paths]
+[prompts]
+[watch]
+[tmux]
+"#;
+        let config = Config::from_str(toml).expect("Should parse");
+        let result = config.validate();
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(err_msg.contains("PLEB_TEST_NONEXISTENT_TOKEN_VAR"));
+        assert!(err_msg.contains("not found"));
     }
 
     // ===================
