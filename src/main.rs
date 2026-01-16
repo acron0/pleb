@@ -321,6 +321,14 @@ impl Orchestrator {
         let current_state = self.github.get_pleb_state(&issue, &self.config.labels);
 
         if let Some(from_state) = current_state {
+            if from_state == target_state {
+                tracing::debug!(
+                    "Issue #{} already in {:?} state, skipping transition",
+                    msg.issue_number,
+                    target_state
+                );
+                return Ok(());
+            }
             self.github
                 .transition_state(msg.issue_number, from_state, target_state, &self.config.labels)
                 .await?;
