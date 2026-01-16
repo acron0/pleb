@@ -161,8 +161,8 @@ impl Orchestrator {
             .load_template(&self.config.prompts.new_issue)?;
 
         // Display startup banner
-        println!(
-            "Pleb daemon started - watching {}/{} for issues with label '{}'",
+        tracing::info!(
+            "Watching {}/{} for issues with label '{}'",
             self.config.github.owner, self.config.github.repo, self.config.labels.ready
         );
 
