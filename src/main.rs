@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod github;
 mod hooks;
+mod ipc;
 mod state;
 mod templates;
 mod tmux;
@@ -96,6 +97,16 @@ fn main() -> Result<()> {
             // Hooks commands don't need config
             handle_hooks_command(action.clone())?;
         }
+        Commands::CcRunHook { event } => {
+            // Hook command only needs config for daemon_dir, no validation needed
+            let config = Config::load(Path::new(&cli.config)).with_context(|| {
+                format!(
+                    "Failed to load config from {}. Run 'pleb config init' to create pleb.toml from example.",
+                    cli.config
+                )
+            })?;
+            runtime.block_on(handle_cc_run_hook_command(&event, config))?;
+        }
         _ => {
             // For all other commands, load and validate config
             let config = load_config(&cli.config)?;
@@ -168,15 +179,28 @@ struct Orchestrator {
     gh_username: String,
     /// Track issues we've already logged as "skipping" to avoid log spam
     logged_skips: HashSet<u64>,
+    /// IPC server for receiving hook messages
+    ipc_server: ipc::IpcServer,
 }
 
 impl Orchestrator {
     async fn new(config: Config) -> Result<Self> {
         let github = GitHubClient::new(&config.github).await?;
         let worktree = WorktreeManager::new(&config.paths);
-        let tmux = TmuxManager::new(&config.tmux);
+
+        // Create TmuxManager with GitHub token passed as environment variable
+        // This ensures hooks running in tmux have access to the token
+        let token = std::env::var(&config.github.token_env)
+            .with_context(|| format!("Missing environment variable: {}", config.github.token_env))?;
+        let tmux = TmuxManager::new(&config.tmux)
+            .with_env(&config.github.token_env, token);
+
         let claude = ClaudeRunner::new(&config.claude, &config.tmux);
         let templates = TemplateEngine::new(&config.prompts)?;
+
+        // Create IPC server for hook messages
+        let daemon_dir = config.daemon_dir()?;
+        let ipc_server = ipc::IpcServer::new(&daemon_dir);
 
         // Fetch authenticated user
         let gh_username = github.get_authenticated_user().await?;
@@ -191,6 +215,7 @@ impl Orchestrator {
             config,
             gh_username,
             logged_skips: HashSet::new(),
+            ipc_server,
         })
     }
 
@@ -209,6 +234,10 @@ impl Orchestrator {
         tracing::info!("Loading templates...");
         self.templates
             .load_template(&self.config.prompts.new_issue)?;
+
+        // Start IPC server for hook messages
+        tracing::info!("Starting IPC server...");
+        let mut ipc_rx = self.ipc_server.start().await?;
 
         // Display startup banner
         tracing::info!(
@@ -231,6 +260,12 @@ impl Orchestrator {
                     tracing::info!("Shutting down...");
                     break;
                 }
+                Some(msg) = ipc_rx.recv() => {
+                    // Handle hook message
+                    if let Err(e) = self.handle_hook_message(msg).await {
+                        tracing::error!("Error handling hook message: {}", e);
+                    }
+                }
                 _ = async {
                     if let Err(e) = self.poll_cycle().await {
                         tracing::error!("Poll cycle error: {}", e);
@@ -240,6 +275,61 @@ impl Orchestrator {
                     // Continue to next cycle
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    /// Handle a message from a Claude Code hook
+    async fn handle_hook_message(&self, msg: ipc::HookMessage) -> Result<()> {
+        let target_state = match msg.event_name.as_str() {
+            "UserPromptSubmit" => PlebState::Working,
+            "Stop" => PlebState::Waiting,
+            "PostToolUse" | "PermissionRequest" => {
+                // For now, these don't trigger state transitions
+                tracing::debug!(
+                    "Hook '{}' received for issue #{}, no state transition",
+                    msg.event_name,
+                    msg.issue_number
+                );
+                return Ok(());
+            }
+            _ => {
+                tracing::warn!(
+                    "Unknown hook event '{}' for issue #{}",
+                    msg.event_name,
+                    msg.issue_number
+                );
+                return Ok(());
+            }
+        };
+
+        tracing::info!(
+            "Hook message: {} on issue #{} -> {:?}",
+            msg.event_name,
+            msg.issue_number,
+            target_state
+        );
+
+        // Get current state and transition
+        let issue = self.github.get_issue(msg.issue_number).await?;
+        let current_state = self.github.get_pleb_state(&issue, &self.config.labels);
+
+        if let Some(from_state) = current_state {
+            self.github
+                .transition_state(msg.issue_number, from_state, target_state, &self.config.labels)
+                .await?;
+            tracing::info!(
+                "Hook transitioned issue #{} from {:?} to {:?}",
+                msg.issue_number,
+                from_state,
+                target_state
+            );
+        } else {
+            tracing::debug!(
+                "Issue #{} is not in a pleb state, ignoring hook",
+                msg.issue_number
+            );
         }
 
         Ok(())
@@ -490,6 +580,8 @@ async fn handle_status_command(issue_number: u64, config: Config) -> Result<()> 
 }
 
 async fn handle_cc_run_hook_command(event: &str, config: Config) -> Result<()> {
+    use ipc::{HookMessage, IpcClient};
+
     // Read JSON from stdin
     use std::io::Read;
     let mut stdin_content = String::new();
@@ -497,11 +589,11 @@ async fn handle_cc_run_hook_command(event: &str, config: Config) -> Result<()> {
         .read_to_string(&mut stdin_content)
         .context("Failed to read from stdin")?;
 
-    // Parse JSON to extract cwd
-    let json: serde_json::Value =
+    // Parse JSON payload from Claude Code
+    let payload: serde_json::Value =
         serde_json::from_str(&stdin_content).context("Failed to parse JSON from stdin")?;
 
-    let cwd = json["cwd"]
+    let cwd = payload["cwd"]
         .as_str()
         .context("Missing or invalid 'cwd' field in hook payload")?;
 
@@ -515,31 +607,41 @@ async fn handle_cc_run_hook_command(event: &str, config: Config) -> Result<()> {
         }
     };
 
-    // Map event to target state
-    let target_state = match event {
-        "stop" => PlebState::Waiting,
-        "user-prompt" => PlebState::Working,
-        _ => {
-            tracing::warn!("Unknown hook event: {}", event);
-            return Ok(());
-        }
+    // Send message to daemon via IPC
+    let daemon_dir = config.daemon_dir()?;
+    let client = IpcClient::new(&daemon_dir);
+
+    let message = HookMessage {
+        event_name: event.to_string(),
+        issue_number,
+        payload,
     };
 
-    // Create GitHub client and transition
-    let github = GitHubClient::new(&config.github).await?;
-    let issue = github.get_issue(issue_number).await?;
-    let current_state = github.get_pleb_state(&issue, &config.labels);
-
-    if let Some(from_state) = current_state {
-        github
-            .transition_state(issue_number, from_state, target_state, &config.labels)
-            .await?;
-        tracing::info!(
-            "Hook '{}' transitioned issue #{} to {:?}",
-            event,
-            issue_number,
-            target_state
-        );
+    match client.send(&message).await {
+        Ok(response) => {
+            if response.success {
+                tracing::info!(
+                    "Hook '{}' sent to daemon for issue #{}",
+                    event,
+                    issue_number
+                );
+            } else {
+                tracing::warn!(
+                    "Daemon rejected hook '{}' for issue #{}: {:?}",
+                    event,
+                    issue_number,
+                    response.message
+                );
+            }
+        }
+        Err(e) => {
+            // Daemon might not be running - fail silently
+            tracing::debug!(
+                "Could not send hook '{}' to daemon (not running?): {}",
+                event,
+                e
+            );
+        }
     }
 
     Ok(())
@@ -792,7 +894,12 @@ async fn handle_command(command: Commands, config: Config) -> Result<()> {
             }
         }
         Commands::Attach => {
-            let tmux_manager = TmuxManager::new(&config.tmux);
+            // Create TmuxManager with GitHub token for session creation
+            let token = std::env::var(&config.github.token_env).ok();
+            let mut tmux_manager = TmuxManager::new(&config.tmux);
+            if let Some(token) = token {
+                tmux_manager = tmux_manager.with_env(&config.github.token_env, token);
+            }
 
             // Ensure the session exists before attaching
             tmux_manager.ensure_session().await.context("Failed to ensure tmux session exists")?;

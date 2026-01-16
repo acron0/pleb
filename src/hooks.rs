@@ -31,7 +31,7 @@ pub fn generate_hooks_json() -> Result<String> {
         vec![HookEntry {
             hooks: vec![Hook {
                 hook_type: "command".to_string(),
-                command: "pleb cc-run-hook stop".to_string(),
+                command: "pleb cc-run-hook Stop".to_string(),
             }],
         }],
     );
@@ -42,7 +42,29 @@ pub fn generate_hooks_json() -> Result<String> {
         vec![HookEntry {
             hooks: vec![Hook {
                 hook_type: "command".to_string(),
-                command: "pleb cc-run-hook user-prompt".to_string(),
+                command: "pleb cc-run-hook UserPromptSubmit".to_string(),
+            }],
+        }],
+    );
+
+    // PostToolUse hook - future extensibility for tool monitoring
+    hooks.insert(
+        "PostToolUse".to_string(),
+        vec![HookEntry {
+            hooks: vec![Hook {
+                hook_type: "command".to_string(),
+                command: "pleb cc-run-hook PostToolUse".to_string(),
+            }],
+        }],
+    );
+
+    // PermissionRequest hook - future extensibility for permission monitoring
+    hooks.insert(
+        "PermissionRequest".to_string(),
+        vec![HookEntry {
+            hooks: vec![Hook {
+                hook_type: "command".to_string(),
+                command: "pleb cc-run-hook PermissionRequest".to_string(),
             }],
         }],
     );
@@ -106,12 +128,22 @@ pub fn install_hooks(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Parse issue number from a worktree path like "/path/worktrees/issue-123"
+/// Parse issue number from a worktree path
+/// Supports both old format "/path/worktrees/issue-123" and
+/// new format "/path/worktrees/123-slug_username_suffix"
 pub fn extract_issue_number_from_path(path: &str) -> Option<u64> {
-    // Look for "issue-" followed by digits
     for component in path.split('/') {
+        // Try old format: "issue-{number}"
         if let Some(issue_part) = component.strip_prefix("issue-") {
             if let Ok(number) = issue_part.parse::<u64>() {
+                return Some(number);
+            }
+        }
+
+        // Try new format: "{number}-{rest}" where number is at the start
+        if let Some(dash_pos) = component.find('-') {
+            let prefix = &component[..dash_pos];
+            if let Ok(number) = prefix.parse::<u64>() {
                 return Some(number);
             }
         }
@@ -125,6 +157,7 @@ mod tests {
 
     #[test]
     fn test_extract_issue_number() {
+        // Old format: issue-{number}
         assert_eq!(
             extract_issue_number_from_path("/path/worktrees/issue-123"),
             Some(123)
@@ -133,16 +166,37 @@ mod tests {
             extract_issue_number_from_path("/home/user/worktrees/issue-42/src"),
             Some(42)
         );
-        assert_eq!(extract_issue_number_from_path("/path/no-issue-here"), None);
         assert_eq!(extract_issue_number_from_path("issue-456"), Some(456));
+
+        // New format: {number}-{slug}_{username}_{suffix}
+        assert_eq!(
+            extract_issue_number_from_path("/path/worktrees/2592-add-invoices-table_user_pleb"),
+            Some(2592)
+        );
+        assert_eq!(
+            extract_issue_number_from_path("/home/acron/projects/kikin/monorepo-branches/2592-add-invoices-table-to-the_acron0_pleb"),
+            Some(2592)
+        );
+
+        // No issue number
+        assert_eq!(extract_issue_number_from_path("/path/no-issue-here"), None);
+        assert_eq!(extract_issue_number_from_path("/path/main"), None);
     }
 
     #[test]
     fn test_generate_hooks_json() {
         let json = generate_hooks_json().unwrap();
+
+        // Verify all 4 hook types are present
         assert!(json.contains("Stop"));
         assert!(json.contains("UserPromptSubmit"));
-        assert!(json.contains("pleb cc-run-hook stop"));
-        assert!(json.contains("pleb cc-run-hook user-prompt"));
+        assert!(json.contains("PostToolUse"));
+        assert!(json.contains("PermissionRequest"));
+
+        // Verify commands use correct event names
+        assert!(json.contains("pleb cc-run-hook Stop"));
+        assert!(json.contains("pleb cc-run-hook UserPromptSubmit"));
+        assert!(json.contains("pleb cc-run-hook PostToolUse"));
+        assert!(json.contains("pleb cc-run-hook PermissionRequest"));
     }
 }

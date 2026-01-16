@@ -6,13 +6,22 @@ use crate::config::TmuxConfig;
 
 pub struct TmuxManager {
     session_name: String,
+    /// Environment variables to pass to tmux sessions (name -> value)
+    env_vars: Vec<(String, String)>,
 }
 
 impl TmuxManager {
     pub fn new(config: &TmuxConfig) -> Self {
         Self {
             session_name: config.session_name.clone(),
+            env_vars: Vec::new(),
         }
+    }
+
+    /// Add an environment variable to be passed to tmux sessions
+    pub fn with_env(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.env_vars.push((name.into(), value.into()));
+        self
     }
 
     /// Get the session name
@@ -37,6 +46,27 @@ impl TmuxManager {
                 .status()
                 .await
                 .context("Failed to create tmux session")?;
+        }
+
+        // Set environment variables for the session (always, to update existing sessions too)
+        for (name, value) in &self.env_vars {
+            tracing::debug!(
+                "Setting tmux environment variable: {}",
+                name
+            );
+            Command::new("tmux")
+                .args([
+                    "set-environment",
+                    "-t",
+                    &self.session_name,
+                    name,
+                    value,
+                ])
+                .status()
+                .await
+                .with_context(|| {
+                    format!("Failed to set tmux environment variable: {}", name)
+                })?;
         }
 
         Ok(())

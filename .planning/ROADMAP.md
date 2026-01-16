@@ -13,6 +13,7 @@ Build an issue-driven Claude Code orchestrator that watches GitHub for labeled i
 - [x] **Phase 5: Hooks & Skills** - Claude Code hooks, built-in skills
 - [x] **Phase 6: Daemon Mode** - Background daemon with file logging
 - [x] **Phase 7: Unit Tests** - Pure function unit tests for untested modules
+- [x] **Phase 8: Generic Hooks & IPC** - Generic hook events, full payload forwarding to daemon
 
 ## Phase Details
 
@@ -81,6 +82,14 @@ Plans:
 - [x] 07-01: Config module tests (TOML parsing, defaults, validation logic)
 - [x] 07-02: Template + coverage review (IssueContext tests, expand existing tests)
 
+### Phase 8: Generic Hooks & IPC
+**Goal**: Refactor hooks to use Claude Code event names directly, forward full stdin JSON payload to daemon
+**Depends on**: Phase 5 (hooks infrastructure)
+**Status**: Complete
+
+Plans:
+- [x] 08-01: Generic hook command, expanded HookMessage, full hook suite generation
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -92,3 +101,4 @@ Plans:
 | 5. Hooks & Skills | 2/2 | Complete | 2026-01-15 |
 | 6. Daemon Mode | 1/1 | Complete | 2026-01-15 |
 | 7. Unit Tests | 2/2 | Complete | 2026-01-15 |
+| 8. Generic Hooks & IPC | 1/1 | Complete | 2026-01-16 |
