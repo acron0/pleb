@@ -13,9 +13,20 @@ pub struct WorktreeManager {
 #[allow(dead_code)]
 impl WorktreeManager {
     pub fn new(config: &PathConfig) -> Self {
+        // Canonicalize paths to ensure consistent comparison with git output
+        // Git always outputs absolute paths, so we need absolute paths too
+        let repo_dir = config
+            .repo_dir
+            .canonicalize()
+            .unwrap_or_else(|_| config.repo_dir.clone());
+        let worktree_base = config
+            .worktree_base
+            .canonicalize()
+            .unwrap_or_else(|_| config.worktree_base.clone());
+
         Self {
-            repo_dir: config.repo_dir.clone(),
-            worktree_base: config.worktree_base.clone(),
+            repo_dir,
+            worktree_base,
         }
     }
 
@@ -400,5 +411,103 @@ impl WorktreeManager {
             .to_string();
 
         Ok(branch)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    fn make_config(repo_dir: PathBuf, worktree_base: PathBuf) -> PathConfig {
+        PathConfig {
+            repo_dir,
+            worktree_base,
+        }
+    }
+
+    #[test]
+    fn test_new_canonicalizes_existing_paths() {
+        // Use the current directory which definitely exists
+        let current_dir = env::current_dir().unwrap();
+
+        // Create config with relative path "."
+        let config = make_config(PathBuf::from("."), PathBuf::from("."));
+        let manager = WorktreeManager::new(&config);
+
+        // Paths should be canonicalized to absolute paths
+        assert!(manager.repo_dir.is_absolute());
+        assert!(manager.worktree_base.is_absolute());
+
+        // Should resolve to current directory
+        assert_eq!(manager.repo_dir, current_dir);
+        assert_eq!(manager.worktree_base, current_dir);
+    }
+
+    #[test]
+    fn test_new_preserves_nonexistent_paths() {
+        // Use paths that don't exist
+        let config = make_config(
+            PathBuf::from("./nonexistent-repo-xyz"),
+            PathBuf::from("../nonexistent-worktrees-xyz"),
+        );
+
+        let manager = WorktreeManager::new(&config);
+
+        // Paths should be preserved as-is since they can't be canonicalized
+        assert_eq!(manager.repo_dir, PathBuf::from("./nonexistent-repo-xyz"));
+        assert_eq!(
+            manager.worktree_base,
+            PathBuf::from("../nonexistent-worktrees-xyz")
+        );
+    }
+
+    #[test]
+    fn test_new_canonicalizes_relative_parent_path() {
+        // Use ".." which should exist (parent of current directory)
+        let current_dir = env::current_dir().unwrap();
+        let parent_dir = current_dir.parent().unwrap();
+
+        let config = make_config(PathBuf::from(".."), PathBuf::from(".."));
+        let manager = WorktreeManager::new(&config);
+
+        // Should be canonicalized to absolute path
+        assert!(manager.repo_dir.is_absolute());
+        assert!(manager.worktree_base.is_absolute());
+
+        // Should resolve to parent directory
+        assert_eq!(manager.repo_dir, parent_dir.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn test_get_worktree_path_returns_none_for_nonexistent() {
+        let config = make_config(
+            PathBuf::from("/nonexistent-repo"),
+            PathBuf::from("/nonexistent-worktrees"),
+        );
+        let manager = WorktreeManager::new(&config);
+
+        // get_worktree_path returns None for non-existent paths
+        assert!(manager.get_worktree_path(123).is_none());
+    }
+
+    #[test]
+    fn test_get_worktree_path_with_existing_directory() {
+        // Use temp directory with a test subdirectory
+        let temp_base = env::temp_dir().join("pleb-test-worktrees");
+        let issue_dir = temp_base.join("issue-789");
+
+        // Create the directory
+        std::fs::create_dir_all(&issue_dir).unwrap();
+
+        let config = make_config(PathBuf::from("/repo"), temp_base.clone());
+        let manager = WorktreeManager::new(&config);
+
+        let path = manager.get_worktree_path(789);
+        assert!(path.is_some());
+        assert!(path.unwrap().ends_with("issue-789"));
+
+        // Cleanup
+        std::fs::remove_dir_all(&temp_base).unwrap();
     }
 }
