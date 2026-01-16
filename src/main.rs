@@ -284,15 +284,20 @@ impl Orchestrator {
     async fn handle_hook_message(&self, msg: ipc::HookMessage) -> Result<()> {
         let target_state = match msg.event_name.as_str() {
             "UserPromptSubmit" => PlebState::Working,
-            "Stop" => PlebState::Waiting,
-            "PostToolUse" | "PermissionRequest" => {
-                // For now, these don't trigger state transitions
-                tracing::debug!(
-                    "Hook '{}' received for issue #{}, no state transition",
-                    msg.event_name,
-                    msg.issue_number
-                );
-                return Ok(());
+            "Stop" | "PermissionRequest" => PlebState::Waiting,
+            "PostToolUse" => {
+                // Only transition to Waiting if Claude used AskUserQuestion
+                let tool_name = msg.payload.get("tool_name").and_then(|v| v.as_str());
+                if tool_name == Some("AskUserQuestion") {
+                    PlebState::Waiting
+                } else {
+                    tracing::debug!(
+                        "PostToolUse for tool {:?} on issue #{}, no state transition",
+                        tool_name,
+                        msg.issue_number
+                    );
+                    return Ok(());
+                }
             }
             _ => {
                 tracing::warn!(
