@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use anyhow::{Context, Result};
 use tokio::process::Command;
 
@@ -26,21 +28,24 @@ impl ClaudeRunner {
     /// Invoke Claude Code in the issue's tmux window with the given prompt
     /// Claude starts in interactive mode so user can attach and interact
     #[allow(dead_code)]
-    pub async fn invoke(&self, issue_number: u64, prompt: &str) -> Result<()> {
-        let window_name = format!("issue-{}", issue_number);
-        let session_name = self.tmux.session_name();
-        let target = format!("{}:{}", session_name, window_name);
+    pub async fn invoke(&self, issue_number: u64, prompt: &str, daemon_dir: &Path) -> Result<()> {
+        // Create issue-specific directory for prompt file
+        let issue_dir = daemon_dir.join(issue_number.to_string());
+        std::fs::create_dir_all(&issue_dir)
+            .with_context(|| format!("Failed to create issue directory: {:?}", issue_dir))?;
 
-        // Write prompt to a temp file
-        let temp_file = format!("/tmp/pleb-prompt-{}.md", issue_number);
-        std::fs::write(&temp_file, prompt)
-            .with_context(|| format!("Failed to write prompt to temp file: {}", temp_file))?;
+        // Write prompt to persistent location
+        let prompt_file = issue_dir.join("prompt.md");
+        std::fs::write(&prompt_file, prompt)
+            .with_context(|| format!("Failed to write prompt file: {:?}", prompt_file))?;
 
-        // Build claude command (always start in plan mode for issue-driven work)
+        // Build claude command with prompt file as argument
+        // Using @/path/to/file syntax to read prompt from file
         let mut cmd_parts = vec![self.command.clone()];
         cmd_parts.extend(self.args.iter().cloned());
         cmd_parts.push("--permission-mode".to_string());
         cmd_parts.push("plan".to_string());
+        cmd_parts.push(format!("@{}", prompt_file.display()));
         let claude_command = cmd_parts.join(" ");
 
         tracing::info!(
@@ -49,35 +54,8 @@ impl ClaudeRunner {
             claude_command
         );
 
-        // Step 1: Load prompt into tmux buffer
-        Command::new("tmux")
-            .args(["load-buffer", &temp_file])
-            .status()
-            .await
-            .context("Failed to load prompt into tmux buffer")?;
-
-        // Step 2: Start Claude (interactive mode, no piping)
+        // Start Claude with the prompt file argument
         self.tmux.send_keys(issue_number, &claude_command).await?;
-
-        // Step 3: Wait for Claude to initialize
-        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-
-        // Step 4: Paste the prompt from buffer
-        Command::new("tmux")
-            .args(["paste-buffer", "-t", &target])
-            .status()
-            .await
-            .context("Failed to paste prompt buffer")?;
-
-        // Step 5: Small delay to ensure paste is processed
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-        // Step 6: Send Enter to submit the prompt
-        Command::new("tmux")
-            .args(["send-keys", "-t", &target, "Enter"])
-            .status()
-            .await
-            .context("Failed to send Enter key")?;
 
         Ok(())
     }
