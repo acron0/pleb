@@ -5,6 +5,7 @@ mod config;
 mod github;
 mod hooks;
 mod ipc;
+mod media;
 mod state;
 mod templates;
 mod tmux;
@@ -181,6 +182,8 @@ struct Orchestrator {
     logged_skips: HashSet<u64>,
     /// IPC server for receiving hook messages
     ipc_server: ipc::IpcServer,
+    /// HTTP client for downloading media from issues
+    media_client: reqwest::Client,
 }
 
 impl Orchestrator {
@@ -193,7 +196,7 @@ impl Orchestrator {
         let token = std::env::var(&config.github.token_env)
             .with_context(|| format!("Missing environment variable: {}", config.github.token_env))?;
         let tmux = TmuxManager::new(&config.tmux)
-            .with_env(&config.github.token_env, token);
+            .with_env(&config.github.token_env, token.clone());
 
         let claude = ClaudeRunner::new(&config.claude, &config.tmux);
         let templates = TemplateEngine::new(&config.prompts)?;
@@ -201,6 +204,9 @@ impl Orchestrator {
         // Create IPC server for hook messages
         let daemon_dir = config.daemon_dir()?;
         let ipc_server = ipc::IpcServer::new(&daemon_dir);
+
+        // Create HTTP client for media downloads (needs auth for private repos)
+        let media_client = media::create_media_client(&token)?;
 
         // Fetch authenticated user
         let gh_username = github.get_authenticated_user().await?;
@@ -216,6 +222,7 @@ impl Orchestrator {
             gh_username,
             logged_skips: HashSet::new(),
             ipc_server,
+            media_client,
         })
     }
 
@@ -472,14 +479,33 @@ impl Orchestrator {
         // Create tmux window
         self.tmux.create_window(issue.number, &worktree_path).await?;
 
+        // Get daemon dir for media storage
+        let daemon_dir = self.config.daemon_dir()?;
+        let issue_dir = daemon_dir.join(issue.number.to_string());
+        std::fs::create_dir_all(&issue_dir)
+            .with_context(|| format!("Failed to create issue directory: {}", issue_dir.display()))?;
+
+        // Process issue body: download images/videos and rewrite URLs to local paths
+        let processed_body = media::process_issue_body(&issue.body, &issue_dir, &self.media_client)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to process media in issue body: {}. Using original body.", e);
+                issue.body.clone()
+            });
+
+        // Create a modified issue with processed body for the template
+        let processed_issue = github::Issue {
+            body: processed_body,
+            ..issue.clone()
+        };
+
         // Render prompt with issue context
-        let context = IssueContext::from_issue(issue, &branch_name, &worktree_path);
+        let context = IssueContext::from_issue(&processed_issue, &branch_name, &worktree_path);
         let prompt = self
             .templates
             .render(&self.config.prompts.new_issue, &context)?;
 
         // Invoke Claude
-        let daemon_dir = self.config.daemon_dir()?;
         self.claude.invoke(issue.number, &prompt, &daemon_dir).await?;
 
         // Transition label: provisioning -> working

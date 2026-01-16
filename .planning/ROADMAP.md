@@ -14,6 +14,7 @@ Build an issue-driven Claude Code orchestrator that watches GitHub for labeled i
 - [x] **Phase 6: Daemon Mode** - Background daemon with file logging
 - [x] **Phase 7: Unit Tests** - Pure function unit tests for untested modules
 - [x] **Phase 8: Generic Hooks & IPC** - Generic hook events, full payload forwarding to daemon
+- [x] **Phase 9: Issue Media Downloading** - Download images/videos from GitHub issues to local files
 
 ## Phase Details
 
@@ -90,6 +91,14 @@ Plans:
 Plans:
 - [x] 08-01: Generic hook command, expanded HookMessage, full hook suite generation
 
+### Phase 9: Issue Media Downloading
+**Goal**: Download images and videos from GitHub issue descriptions to local disk, replacing URLs with local file paths in prompts so Claude can view them
+**Depends on**: Phase 4 (orchestration, prompt generation)
+**Status**: Complete
+
+Plans:
+- [x] 09-01: Media extraction, downloading, and prompt integration
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -102,3 +111,4 @@ Plans:
 | 6. Daemon Mode | 1/1 | Complete | 2026-01-15 |
 | 7. Unit Tests | 2/2 | Complete | 2026-01-15 |
 | 8. Generic Hooks & IPC | 1/1 | Complete | 2026-01-16 |
+| 9. Issue Media Downloading | 1/1 | Complete | 2026-01-16 |
