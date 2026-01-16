@@ -136,7 +136,7 @@ fn default_session_name() -> String {
     "pleb".to_string()
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BranchConfig {
     #[serde(default = "default_branch_suffix")]
     pub suffix: String,
@@ -144,6 +144,14 @@ pub struct BranchConfig {
 
 fn default_branch_suffix() -> String {
     "pleb".to_string()
+}
+
+impl Default for BranchConfig {
+    fn default() -> Self {
+        Self {
+            suffix: default_branch_suffix(),
+        }
+    }
 }
 
 impl Config {
