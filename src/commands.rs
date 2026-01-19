@@ -12,7 +12,7 @@ Create a pull request for the current work and mark the issue as done.
 2. Push the current branch to origin
 3. Create a pull request using `gh pr create`:
    - Title: Use the issue title or branch name
-   - Body: Reference the issue number (Closes #XXX)
+   - Body: Reference the issue number (Fixes #XXX) so GitHub auto-closes it on merge
 4. Run: `pleb transition <issue-number> done`
 5. Report the PR URL to the user
 
@@ -25,6 +25,7 @@ Create a pull request for the current work and mark the issue as done.
 - If there are no changes to commit, skip step 1
 - If PR already exists for this branch, report existing PR instead of creating new one
 - Always transition to done state after PR is created/found
+- Do NOT close the issue - GitHub will auto-close it when the PR is merged
 "#;
 
 /// Slash command content for `/pleb-abandon`
@@ -39,13 +40,15 @@ Give up on the current issue and clean up.
    pleb transition <issue-number> none
    ```
    (Note: "none" is a special state that removes all pleb:* labels)
-3. Optionally: Ask user if they want to delete the worktree and close the tmux window
-4. Report that the issue has been abandoned and is no longer managed by pleb
+3. Ask user for confirmation: "Kill the tmux window for this issue? (yes/no)"
+4. If confirmed, kill the tmux window using: `tmux kill-window -t pleb:issue-<issue-number>`
+5. Report that the issue has been abandoned and is no longer managed by pleb
 
 ## Context
 - The issue will remain open on GitHub but won't have any pleb labels
 - User can manually re-add `pleb:ready` label to restart work later
-- Worktree cleanup is optional to preserve any useful partial work
+- Worktree is preserved to keep any useful partial work
+- Killing the tmux window is optional and requires explicit confirmation
 "#;
 
 /// Slash command content for `/pleb-status`
