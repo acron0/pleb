@@ -154,6 +154,15 @@ impl Default for BranchConfig {
     }
 }
 
+/// Describes where a config file was found
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigLocation {
+    /// Found in the current working directory
+    Pwd,
+    /// Found in a parent directory (1 or 2 levels up)
+    Parent,
+}
+
 impl Config {
     /// Load configuration from the specified file path
     pub fn load(path: &Path) -> Result<Self> {
@@ -166,9 +175,51 @@ impl Config {
         Ok(config)
     }
 
-    /// Load configuration from the default location (./pleb.toml)
-    pub fn load_default() -> Result<Self> {
-        Self::load(Path::new("pleb.toml"))
+    /// Find and load configuration, searching up to 2 parent directories.
+    /// Logs the location where the config was found.
+    ///
+    /// Search order: current directory -> parent -> grandparent
+    pub fn find_and_load(filename: &str) -> Result<Self> {
+        let (config, path, location) = Self::find_config(filename)?;
+
+        let location_str = match location {
+            ConfigLocation::Pwd => "PWD",
+            ConfigLocation::Parent => "PARENT",
+        };
+        tracing::info!("Using {} from {} ({})", filename, path.display(), location_str);
+
+        Ok(config)
+    }
+
+    /// Find configuration file, searching up to 2 parent directories.
+    /// Returns the config, the full path where it was found, and the location type.
+    ///
+    /// Search order: current directory -> parent -> grandparent
+    pub fn find_config(filename: &str) -> Result<(Self, PathBuf, ConfigLocation)> {
+        let cwd = std::env::current_dir().context("Failed to get current directory")?;
+
+        // Search current directory, then up to 2 parent directories
+        let search_dirs: Vec<(PathBuf, ConfigLocation)> = vec![
+            (cwd.clone(), ConfigLocation::Pwd),
+            (cwd.parent().map(|p| p.to_path_buf()).unwrap_or_default(), ConfigLocation::Parent),
+            (cwd.parent().and_then(|p| p.parent()).map(|p| p.to_path_buf()).unwrap_or_default(), ConfigLocation::Parent),
+        ];
+
+        for (dir, location) in search_dirs {
+            if dir.as_os_str().is_empty() {
+                continue;
+            }
+            let config_path = dir.join(filename);
+            if config_path.exists() {
+                let config = Self::load(&config_path)?;
+                return Ok((config, config_path, location));
+            }
+        }
+
+        anyhow::bail!(
+            "Config file '{}' not found in current directory or up to 2 parent directories",
+            filename
+        )
     }
 
     /// Get the daemon directory for this repo: ~/.pleb/{owner}-{repo}/

@@ -100,9 +100,9 @@ fn main() -> Result<()> {
         }
         Commands::CcRunHook { event } => {
             // Hook command only needs config for daemon_dir, no validation needed
-            let config = Config::load(Path::new(&cli.config)).with_context(|| {
+            let config = Config::find_and_load(&cli.config).with_context(|| {
                 format!(
-                    "Failed to load config from {}. Run 'pleb config init' to create pleb.toml from example.",
+                    "Failed to load config '{}'. Run 'pleb config init' to create pleb.toml from example.",
                     cli.config
                 )
             })?;
@@ -121,7 +121,7 @@ fn main() -> Result<()> {
 fn handle_config_command(action: &ConfigAction) -> Result<()> {
     match action {
         ConfigAction::Show => {
-            let config = Config::load_default().context(
+            let config = Config::find_and_load("pleb.toml").context(
                 "Failed to load config. Run 'pleb config init' to create pleb.toml from example.",
             )?;
             config.validate()?;
@@ -153,11 +153,10 @@ fn handle_config_command(action: &ConfigAction) -> Result<()> {
 }
 
 fn load_config(path: &str) -> Result<Config> {
-    let config_path = Path::new(path);
-
-    let config = Config::load(config_path).with_context(|| {
+    // Use find_and_load to search up to 2 parent directories
+    let config = Config::find_and_load(path).with_context(|| {
         format!(
-            "Failed to load config from {}. Run 'pleb config init' to create pleb.toml from example.",
+            "Failed to load config '{}'. Run 'pleb config init' to create pleb.toml from example.",
             path
         )
     })?;
