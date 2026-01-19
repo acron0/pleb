@@ -73,3 +73,13 @@ session_name = "pleb"
 # Format: {issue_number}-{issue_title_slug}_{github_username}_{suffix}
 # Example: 123-fix-login-bug_acron0_pleb
 suffix = "pleb"
+
+[provision]
+# Shell commands to run after tmux window creation, before Claude starts
+# Commands run in the worktree directory
+# Useful for splitting windows, starting companion scripts, etc.
+on_provision = [
+  # Example: split window and run a watcher script
+  # "tmux split-window -h",
+  # "tmux send-keys -t {next} './watch.sh' Enter"
+]
