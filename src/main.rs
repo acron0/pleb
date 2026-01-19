@@ -178,6 +178,8 @@ struct Orchestrator {
     config: Config,
     /// The authenticated GitHub username
     gh_username: String,
+    /// GitHub token for API calls requiring custom headers
+    gh_token: String,
     /// Track issues we've already logged as "skipping" to avoid log spam
     logged_skips: HashSet<u64>,
     /// IPC server for receiving hook messages
@@ -220,6 +222,7 @@ impl Orchestrator {
             templates,
             config,
             gh_username,
+            gh_token: token,
             logged_skips: HashSet::new(),
             ipc_server,
             media_client,
@@ -487,7 +490,7 @@ impl Orchestrator {
 
         // Fetch body_html which contains signed URLs for private attachments
         // GitHub user-attachments require this special endpoint to get downloadable URLs
-        let body_html = self.github.get_issue_body_html(issue.number).await
+        let body_html = self.github.get_issue_body_html(issue.number, &self.gh_token).await
             .unwrap_or_else(|e| {
                 tracing::warn!("Failed to fetch body_html for issue #{}: {}. Media may not download.", issue.number, e);
                 String::new()

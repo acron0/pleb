@@ -317,12 +317,22 @@ impl GitHubClient {
     /// GitHub user-attachments (images/videos uploaded to issues) require special
     /// authentication. When fetching with `Accept: application/vnd.github.full+json`,
     /// GitHub returns body_html with short-lived JWT tokens in the image URLs.
-    pub async fn get_issue_body_html(&self, issue_number: u64) -> Result<String> {
-        let route = format!("/repos/{}/{}/issues/{}", self.owner, self.repo, issue_number);
+    ///
+    /// Note: We use reqwest directly here because octocrab doesn't easily support
+    /// custom Accept headers per-request.
+    pub async fn get_issue_body_html(&self, issue_number: u64, github_token: &str) -> Result<String> {
+        let url = format!(
+            "https://api.github.com/repos/{}/{}/issues/{}",
+            self.owner, self.repo, issue_number
+        );
 
-        let response: serde_json::Value = self
-            .client
-            .get(&route, Some(&[("Accept", "application/vnd.github.full+json")]))
+        let client = reqwest::Client::new();
+        let response = client
+            .get(&url)
+            .header("Accept", "application/vnd.github.full+json")
+            .header("Authorization", format!("Bearer {}", github_token))
+            .header("User-Agent", "pleb")
+            .send()
             .await
             .with_context(|| {
                 format!(
@@ -331,13 +341,26 @@ impl GitHubClient {
                 )
             })?;
 
-        let body_html = response
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "GitHub API returned {} for issue #{}",
+                response.status(),
+                issue_number
+            );
+        }
+
+        let json: serde_json::Value = response
+            .json::<serde_json::Value>()
+            .await
+            .context("Failed to parse response as JSON")?;
+
+        let body_html = json
             .get("body_html")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
 
-        tracing::debug!(
+        tracing::info!(
             "Fetched body_html for issue #{} ({} chars)",
             issue_number,
             body_html.len()

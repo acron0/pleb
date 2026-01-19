@@ -19,4 +19,4 @@ daemonize = "0.5"
 tracing-appender = "0.2"
 nix = { version = "0.30.1", features = ["signal"] }
 regex = "1"
-reqwest = { version = "0.12", features = ["rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["rustls-tls", "json"], default-features = false }
