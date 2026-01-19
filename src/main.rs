@@ -481,6 +481,14 @@ impl Orchestrator {
         // Create tmux window
         self.tmux.create_window(issue.number, &worktree_path).await?;
 
+        // Execute on_provision hooks
+        for cmd in &self.config.provision.on_provision {
+            tracing::info!("Running on_provision hook for issue #{}: {}", issue.number, cmd);
+            self.tmux.send_keys(issue.number, cmd).await?;
+            // Small delay to let command start before next one
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
         // Get daemon dir for media storage
         let daemon_dir = self.config.daemon_dir()?;
         let issue_dir = daemon_dir.join(issue.number.to_string());

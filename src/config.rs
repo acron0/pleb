@@ -13,6 +13,8 @@ pub struct Config {
     pub tmux: TmuxConfig,
     #[serde(default)]
     pub branch: BranchConfig,
+    #[serde(default)]
+    pub provision: ProvisionConfig,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -152,6 +154,14 @@ impl Default for BranchConfig {
             suffix: default_branch_suffix(),
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct ProvisionConfig {
+    /// Shell commands to run after window creation, before Claude starts.
+    /// Commands execute in the tmux window's working directory (the worktree).
+    #[serde(default)]
+    pub on_provision: Vec<String>,
 }
 
 /// Describes where a config file was found
@@ -505,6 +515,32 @@ repo = "testrepo"
 
         // Branch defaults
         assert_eq!(config.branch.suffix, "pleb");
+
+        // Provision defaults
+        assert!(config.provision.on_provision.is_empty());
+    }
+
+    #[test]
+    fn test_provision_on_provision_commands() {
+        let toml = r#"
+[github]
+owner = "testowner"
+repo = "testrepo"
+
+[labels]
+[claude]
+[paths]
+[prompts]
+[watch]
+[tmux]
+
+[provision]
+on_provision = ["tmux split-window -h", "echo hello"]
+"#;
+        let config = Config::from_str(toml).expect("Should parse");
+        assert_eq!(config.provision.on_provision.len(), 2);
+        assert_eq!(config.provision.on_provision[0], "tmux split-window -h");
+        assert_eq!(config.provision.on_provision[1], "echo hello");
     }
 
     // ===================

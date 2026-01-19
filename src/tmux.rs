@@ -192,7 +192,6 @@ impl TmuxManager {
     }
 
     /// Send keys to a window (for starting Claude, etc.)
-    #[allow(dead_code)]
     pub async fn send_keys(&self, issue_number: u64, keys: &str) -> Result<()> {
         let window_name = format!("issue-{}", issue_number);
         let target = format!("{}:{}", self.session_name, window_name);

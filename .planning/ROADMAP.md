@@ -15,6 +15,7 @@ Build an issue-driven Claude Code orchestrator that watches GitHub for labeled i
 - [x] **Phase 7: Unit Tests** - Pure function unit tests for untested modules
 - [x] **Phase 8: Generic Hooks & IPC** - Generic hook events, full payload forwarding to daemon
 - [x] **Phase 9: Issue Media Downloading** - Download images/videos from GitHub issues to local files
+- [x] **Phase 10: Provision Hooks** - Configurable shell commands run after window creation, before Claude
 
 ## Phase Details
 
@@ -99,6 +100,14 @@ Plans:
 Plans:
 - [x] 09-01: Media extraction, downloading, and prompt integration
 
+### Phase 10: Provision Hooks
+**Goal**: Configurable shell commands that run after tmux window creation but before Claude starts
+**Depends on**: Phase 3 (session management), Phase 4 (orchestration)
+**Status**: Complete
+
+Plans:
+- [x] 10-01: ProvisionConfig, on_provision command execution in process_issue
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -112,3 +121,4 @@ Plans:
 | 7. Unit Tests | 2/2 | Complete | 2026-01-15 |
 | 8. Generic Hooks & IPC | 1/1 | Complete | 2026-01-16 |
 | 9. Issue Media Downloading | 1/1 | Complete | 2026-01-16 |
+| 10. Provision Hooks | 1/1 | Complete | 2026-01-19 |
