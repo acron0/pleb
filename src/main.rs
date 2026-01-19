@@ -75,14 +75,15 @@ fn main() -> Result<()> {
     // Handle daemon mode specially - must fork BEFORE creating tokio runtime
     if let Commands::Watch { daemon: true } = &cli.command {
         let config = load_config(&cli.config)?;
-        return run_daemon_mode(config);
+        return run_daemon_mode(config, cli.verbose);
     }
 
     // Initialize tracing for non-daemon modes
+    let log_level = if cli.verbose { "pleb=debug" } else { "pleb=info" };
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "pleb=info".into()),
+                .unwrap_or_else(|_| log_level.into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
@@ -165,6 +166,7 @@ fn load_config(path: &str) -> Result<Config> {
 
     Ok(config)
 }
+
 
 /// Orchestrator that manages the main daemon loop
 /// State is derived from GitHub labels - minimal in-memory tracking
@@ -833,7 +835,7 @@ fn handle_stop_command(config: Config) -> Result<()> {
     Ok(())
 }
 
-fn run_daemon_mode(config: Config) -> Result<()> {
+fn run_daemon_mode(config: Config, verbose: bool) -> Result<()> {
     use daemonize::Daemonize;
     use std::fs;
 
@@ -908,16 +910,27 @@ fn run_daemon_mode(config: Config) -> Result<()> {
         log_file_for_tracing.file_name().unwrap(),
     );
 
+    let log_level = if verbose { "pleb=debug" } else { "pleb=info" };
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "pleb=info".into()),
+                .unwrap_or_else(|_| log_level.into()),
         )
         .with(tracing_subscriber::fmt::layer().with_writer(file_appender))
         .init();
 
     tracing::info!("========================================");
     tracing::info!("Daemon started with PID: {}", std::process::id());
+
+    // Log config location (now that tracing is initialized)
+    // Re-find to get path info (config was loaded before fork)
+    if let Ok((_, path, location)) = Config::find_config("pleb.toml") {
+        let location_str = match location {
+            config::ConfigLocation::Pwd => "PWD",
+            config::ConfigLocation::Parent => "PARENT",
+        };
+        tracing::debug!("Using pleb.toml from {} ({})", path.display(), location_str);
+    }
 
     // NOW create tokio runtime (after fork)
     let runtime = tokio::runtime::Runtime::new().context("Failed to create tokio runtime")?;

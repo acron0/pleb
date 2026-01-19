@@ -186,7 +186,6 @@ impl Config {
     }
 
     /// Find and load configuration, searching up to 2 parent directories.
-    /// Logs the location where the config was found.
     ///
     /// Search order: current directory -> parent -> grandparent
     pub fn find_and_load(filename: &str) -> Result<Self> {
@@ -196,7 +195,7 @@ impl Config {
             ConfigLocation::Pwd => "PWD",
             ConfigLocation::Parent => "PARENT",
         };
-        tracing::info!("Using {} from {} ({})", filename, path.display(), location_str);
+        tracing::debug!("Using {} from {} ({})", filename, path.display(), location_str);
 
         Ok(config)
     }

@@ -8,6 +8,10 @@ pub struct Cli {
     #[arg(long, default_value = "pleb.toml", global = true)]
     pub config: String,
 
+    /// Enable verbose output (debug logging)
+    #[arg(long, short, global = true)]
+    pub verbose: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }
