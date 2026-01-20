@@ -206,6 +206,26 @@ impl TmuxManager {
         Ok(())
     }
 
+    /// Rename a window to include state indicator (e.g., "issue-42-waiting")
+    pub async fn rename_window(&self, issue_number: u64, state: &str) -> Result<()> {
+        // Target the window by its current name pattern (issue-N or issue-N-*)
+        let target = format!("{}:issue-{}", self.session_name, issue_number);
+        let new_name = format!("issue-{}-{}", issue_number, state);
+
+        tracing::debug!("Renaming window {} to {}", target, new_name);
+        let status = Command::new("tmux")
+            .args(["rename-window", "-t", &target, &new_name])
+            .status()
+            .await
+            .context("Failed to rename tmux window")?;
+
+        if !status.success() {
+            tracing::warn!("Failed to rename window to {}", new_name);
+        }
+
+        Ok(())
+    }
+
     /// Attach to the pleb session (blocking - replaces current terminal)
     /// This returns a std::process::Command that the caller can exec() or status()
     pub fn attach_command(&self) -> std::process::Command {

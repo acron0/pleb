@@ -343,6 +343,17 @@ impl Orchestrator {
             self.github
                 .transition_state(msg.issue_number, from_state, target_state, &self.config.labels)
                 .await?;
+
+            // Update tmux window name to reflect new state
+            let state_name = match target_state {
+                PlebState::Waiting => "waiting",
+                PlebState::Working => "working",
+                _ => "unknown",
+            };
+            if let Err(e) = self.tmux.rename_window(msg.issue_number, state_name).await {
+                tracing::warn!("Failed to rename tmux window for issue #{}: {}", msg.issue_number, e);
+            }
+
             tracing::info!(
                 "Hook transitioned issue #{} from {:?} to {:?}",
                 msg.issue_number,
@@ -543,6 +554,11 @@ impl Orchestrator {
                 &self.config.labels,
             )
             .await?;
+
+        // Update tmux window name to show "working" state
+        if let Err(e) = self.tmux.rename_window(issue.number, "working").await {
+            tracing::warn!("Failed to rename tmux window for issue #{}: {}", issue.number, e);
+        }
 
         tracing::info!(
             "Successfully provisioned issue #{}: {}",
