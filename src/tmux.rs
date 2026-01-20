@@ -226,6 +226,20 @@ impl TmuxManager {
         Ok(())
     }
 
+    /// Select a specific pane in a window (e.g., pane 0 after on_provision hooks)
+    pub async fn select_pane(&self, issue_number: u64, pane_index: u32) -> Result<()> {
+        let target = format!("{}:issue-{}:.{}", self.session_name, issue_number, pane_index);
+
+        tracing::debug!("Selecting pane {}", target);
+        Command::new("tmux")
+            .args(["select-pane", "-t", &target])
+            .status()
+            .await
+            .context("Failed to select tmux pane")?;
+
+        Ok(())
+    }
+
     /// Attach to the pleb session (blocking - replaces current terminal)
     /// This returns a std::process::Command that the caller can exec() or status()
     pub fn attach_command(&self) -> std::process::Command {

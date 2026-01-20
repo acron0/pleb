@@ -502,6 +502,11 @@ impl Orchestrator {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
 
+        // Ensure pane 0 is selected before invoking Claude (hooks may have changed focus)
+        if !self.config.provision.on_provision.is_empty() {
+            self.tmux.select_pane(issue.number, 0).await?;
+        }
+
         // Get daemon dir for media storage
         let daemon_dir = self.config.daemon_dir()?;
         let issue_dir = daemon_dir.join(issue.number.to_string());
