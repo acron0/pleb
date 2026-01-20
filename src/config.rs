@@ -185,6 +185,23 @@ impl Config {
         Ok(config)
     }
 
+    /// Resolve relative paths in the config relative to a base directory.
+    /// This ensures paths like "./repo" work correctly when config is found in a parent dir.
+    pub fn resolve_paths_relative_to(&mut self, base_dir: &Path) {
+        // Helper to resolve a path if it's relative
+        let resolve = |p: &PathBuf| -> PathBuf {
+            if p.is_relative() {
+                base_dir.join(p)
+            } else {
+                p.clone()
+            }
+        };
+
+        self.paths.repo_dir = resolve(&self.paths.repo_dir);
+        self.paths.worktree_base = resolve(&self.paths.worktree_base);
+        self.prompts.dir = resolve(&self.prompts.dir);
+    }
+
     /// Find and load configuration, searching up to 2 parent directories.
     ///
     /// Search order: current directory -> parent -> grandparent
@@ -220,7 +237,11 @@ impl Config {
             }
             let config_path = dir.join(filename);
             if config_path.exists() {
-                let config = Self::load(&config_path)?;
+                let mut config = Self::load(&config_path)?;
+                // Resolve relative paths in config relative to the config file's directory
+                if let Some(config_dir) = config_path.parent() {
+                    config.resolve_paths_relative_to(config_dir);
+                }
                 return Ok((config, config_path, location));
             }
         }
@@ -714,5 +735,58 @@ token_env = "PLEB_TEST_NONEXISTENT_TOKEN_VAR"
         let pid_file = config.pid_file().expect("Should get pid file");
 
         assert!(pid_file.to_string_lossy().ends_with("pleb.pid"));
+    }
+
+    #[test]
+    fn test_resolve_paths_relative_to() {
+        let mut config = Config::from_str(MINIMAL_CONFIG).expect("Should parse");
+
+        // Default paths are relative: ./repo, ./worktrees, ./prompts
+        assert!(config.paths.repo_dir.is_relative());
+        assert!(config.paths.worktree_base.is_relative());
+        assert!(config.prompts.dir.is_relative());
+
+        // Resolve relative to /some/parent/dir
+        let base_dir = PathBuf::from("/some/parent/dir");
+        config.resolve_paths_relative_to(&base_dir);
+
+        // Paths should now be absolute, joined with base_dir
+        assert_eq!(config.paths.repo_dir, PathBuf::from("/some/parent/dir/./repo"));
+        assert_eq!(config.paths.worktree_base, PathBuf::from("/some/parent/dir/./worktrees"));
+        assert_eq!(config.prompts.dir, PathBuf::from("/some/parent/dir/./prompts"));
+    }
+
+    #[test]
+    fn test_resolve_paths_preserves_absolute() {
+        let toml = r#"
+[github]
+owner = "testowner"
+repo = "testrepo"
+
+[labels]
+[claude]
+
+[paths]
+repo_dir = "/absolute/repo"
+worktree_base = "/absolute/worktrees"
+
+[prompts]
+dir = "/absolute/prompts"
+
+[watch]
+[tmux]
+"#;
+        let mut config = Config::from_str(toml).expect("Should parse");
+
+        // These are already absolute
+        assert!(config.paths.repo_dir.is_absolute());
+
+        // Resolve should not change absolute paths
+        let base_dir = PathBuf::from("/some/other/dir");
+        config.resolve_paths_relative_to(&base_dir);
+
+        assert_eq!(config.paths.repo_dir, PathBuf::from("/absolute/repo"));
+        assert_eq!(config.paths.worktree_base, PathBuf::from("/absolute/worktrees"));
+        assert_eq!(config.prompts.dir, PathBuf::from("/absolute/prompts"));
     }
 }
