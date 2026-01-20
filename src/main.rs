@@ -494,10 +494,21 @@ impl Orchestrator {
         // Create tmux window
         self.tmux.create_window(issue.number, &worktree_path).await?;
 
-        // Execute on_provision hooks
+        // Create context for template rendering (used by both provision hooks and prompts)
+        // Note: We use a placeholder body here for provision hooks; the real processed body
+        // is set later after media processing for the Claude prompt.
+        let provision_context = IssueContext::from_issue(
+            issue,
+            &branch_name,
+            &worktree_path,
+            &self.config.paths.repo_dir,
+        );
+
+        // Execute on_provision hooks with template variable support
         for cmd in &self.config.provision.on_provision {
-            tracing::info!("Running on_provision hook for issue #{}: {}", issue.number, cmd);
-            self.tmux.send_keys(issue.number, cmd).await?;
+            let rendered_cmd = self.templates.render_string(cmd, &provision_context)?;
+            tracing::info!("Running on_provision hook for issue #{}: {}", issue.number, rendered_cmd);
+            self.tmux.send_keys(issue.number, &rendered_cmd).await?;
             // Small delay to let command start before next one
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
@@ -541,8 +552,13 @@ impl Orchestrator {
             ..issue.clone()
         };
 
-        // Render prompt with issue context
-        let context = IssueContext::from_issue(&processed_issue, &branch_name, &worktree_path);
+        // Render prompt with issue context (use processed_issue which has local media paths)
+        let context = IssueContext::from_issue(
+            &processed_issue,
+            &branch_name,
+            &worktree_path,
+            &self.config.paths.repo_dir,
+        );
         let prompt = self
             .templates
             .render(&self.config.prompts.new_issue, &context)?;

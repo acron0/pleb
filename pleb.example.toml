@@ -54,10 +54,6 @@ dir = "./prompts"
 # This prompt is used when Claude starts working on a fresh issue
 new_issue = "new_issue.md"
 
-# Prompt template file for when planning is complete
-# This prompt is used when transitioning from planning to implementation
-planning_done = "planning_done.md"
-
 [watch]
 # How often (in seconds) to poll GitHub for new issues
 # Lower values = faster response, but more API calls
@@ -78,8 +74,17 @@ suffix = "pleb"
 # Shell commands to run after tmux window creation, before Claude starts
 # Commands run in the worktree directory
 # Useful for splitting windows, starting companion scripts, etc.
+#
+# Template variables (Handlebars syntax):
+#   {{repo_path}}     - Path to the original repository (not the worktree)
+#   {{worktree_path}} - Path to this issue's worktree
+#   {{issue_number}}  - GitHub issue number
+#   {{branch_name}}   - Git branch name for this issue
+#   {{title}}         - Issue title
+#   {{html_url}}      - GitHub URL of the issue
+#
 on_provision = [
-  # Example: split window and run a watcher script
-  # "tmux split-window -h",
+  # Example: split window and run a watcher in the original repo
+  # "tmux split-window -h -c '{{repo_path}}'",
   # "tmux send-keys -t {next} './watch.sh' Enter"
 ]
