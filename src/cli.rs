@@ -55,8 +55,8 @@ pub enum Commands {
 
     #[command(about = "Show pleb state for an issue")]
     Status {
-        /// Issue number
-        issue_number: u64,
+        /// Issue number (optional - shows daemon status and all managed issues if omitted)
+        issue_number: Option<u64>,
     },
 
     #[command(about = "Hook invoked by Claude Code on events")]

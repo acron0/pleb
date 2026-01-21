@@ -647,36 +647,199 @@ async fn handle_transition_command(
     Ok(())
 }
 
-async fn handle_status_command(issue_number: u64, config: Config) -> Result<()> {
-    // Create GitHub client
-    let github = GitHubClient::new(&config.github).await?;
+/// Represents the daemon status
+struct DaemonStatus {
+    running: bool,
+    pid: Option<i32>,
+    uptime: Option<String>,
+}
 
-    // Fetch the issue
-    let issue = github.get_issue(issue_number).await?;
+/// Check daemon status by reading PID file and checking if process exists
+fn check_daemon_status(config: &Config) -> DaemonStatus {
+    let pid_file_path = match config.pid_file() {
+        Ok(path) => path,
+        Err(_) => return DaemonStatus { running: false, pid: None, uptime: None },
+    };
 
-    // Determine current pleb state
-    let current_state = github.get_pleb_state(&issue, &config.labels);
+    // Check if PID file exists
+    if !pid_file_path.exists() {
+        return DaemonStatus { running: false, pid: None, uptime: None };
+    }
 
-    // Print formatted status
-    println!("Issue #{}: {}", issue.number, issue.title);
+    // Read PID from file
+    let pid_str = match std::fs::read_to_string(&pid_file_path) {
+        Ok(s) => s,
+        Err(_) => return DaemonStatus { running: false, pid: None, uptime: None },
+    };
 
-    match current_state {
-        Some(state) => {
-            let state_name = match state {
-                PlebState::Ready => "ready",
-                PlebState::Provisioning => "provisioning",
-                PlebState::Waiting => "waiting",
-                PlebState::Working => "working",
-                PlebState::Done => "done",
-            };
-            println!("State: {}", state_name);
-        }
-        None => {
-            println!("State: not managed by pleb");
+    let pid: i32 = match pid_str.trim().parse() {
+        Ok(p) => p,
+        Err(_) => return DaemonStatus { running: false, pid: None, uptime: None },
+    };
+
+    // Check if process is running
+    #[cfg(unix)]
+    {
+        use nix::sys::signal::kill;
+        use nix::unistd::Pid;
+
+        match kill(Pid::from_raw(pid), None) {
+            Ok(_) => {
+                // Process exists, calculate uptime from PID file mtime
+                let uptime = std::fs::metadata(&pid_file_path)
+                    .ok()
+                    .and_then(|metadata| metadata.modified().ok())
+                    .and_then(|modified| {
+                        let duration = std::time::SystemTime::now()
+                            .duration_since(modified)
+                            .ok()?;
+                        Some(format_duration(duration))
+                    });
+
+                DaemonStatus {
+                    running: true,
+                    pid: Some(pid),
+                    uptime,
+                }
+            }
+            Err(_) => {
+                // Process doesn't exist (stale PID file)
+                DaemonStatus { running: false, pid: None, uptime: None }
+            }
         }
     }
 
-    println!("URL: {}", issue.html_url);
+    #[cfg(not(unix))]
+    {
+        // On non-Unix systems, if PID file exists, assume running
+        DaemonStatus {
+            running: true,
+            pid: Some(pid),
+            uptime: None,
+        }
+    }
+}
+
+/// Format a duration into a human-readable string
+fn format_duration(duration: std::time::Duration) -> String {
+    let secs = duration.as_secs();
+    let days = secs / 86400;
+    let hours = (secs % 86400) / 3600;
+    let minutes = (secs % 3600) / 60;
+
+    if days > 0 {
+        format!("{}d {}h {}m", days, hours, minutes)
+    } else if hours > 0 {
+        format!("{}h {}m", hours, minutes)
+    } else {
+        format!("{}m", minutes)
+    }
+}
+
+async fn handle_status_command(issue_number: Option<u64>, config: Config) -> Result<()> {
+    match issue_number {
+        Some(num) => {
+            // Single issue status - existing behavior
+            let github = GitHubClient::new(&config.github).await?;
+            let issue = github.get_issue(num).await?;
+            let current_state = github.get_pleb_state(&issue, &config.labels);
+
+            println!("Issue #{}: {}", issue.number, issue.title);
+
+            match current_state {
+                Some(state) => {
+                    let state_name = match state {
+                        PlebState::Ready => "ready",
+                        PlebState::Provisioning => "provisioning",
+                        PlebState::Waiting => "waiting",
+                        PlebState::Working => "working",
+                        PlebState::Done => "done",
+                    };
+                    println!("State: {}", state_name);
+                }
+                None => {
+                    println!("State: not managed by pleb");
+                }
+            }
+
+            println!("URL: {}", issue.html_url);
+        }
+        None => {
+            // Show daemon status and all managed issues
+            let daemon_status = check_daemon_status(&config);
+
+            if daemon_status.running {
+                print!("Daemon: running");
+                if let Some(pid) = daemon_status.pid {
+                    print!(" (PID: {}", pid);
+                    if let Some(uptime) = daemon_status.uptime {
+                        print!(", uptime: {}", uptime);
+                    }
+                    print!(")");
+                }
+                println!();
+                println!();
+
+                // Fetch all managed issues
+                let github = GitHubClient::new(&config.github).await?;
+
+                // Collect all issues with any pleb label
+                let mut all_issues = Vec::new();
+                let labels = [
+                    &config.labels.ready,
+                    &config.labels.provisioning,
+                    &config.labels.waiting,
+                    &config.labels.working,
+                    &config.labels.done,
+                ];
+
+                for label in labels {
+                    let issues = github.get_issues_with_label(label).await?;
+                    all_issues.extend(issues);
+                }
+
+                // Remove duplicates (issues can't have multiple pleb labels, but just in case)
+                let mut seen = HashSet::new();
+                all_issues.retain(|issue| seen.insert(issue.number));
+
+                // Sort by issue number
+                all_issues.sort_by_key(|issue| issue.number);
+
+                if all_issues.is_empty() {
+                    println!("No managed issues found.");
+                } else {
+                    println!("Managed Issues:");
+                    for issue in all_issues {
+                        let state = github.get_pleb_state(&issue, &config.labels);
+                        let state_str = match state {
+                            Some(PlebState::Ready) => "[ready]",
+                            Some(PlebState::Provisioning) => "[provisioning]",
+                            Some(PlebState::Waiting) => "[waiting]",
+                            Some(PlebState::Working) => "[working]",
+                            Some(PlebState::Done) => "[done]",
+                            None => "[unknown]",
+                        };
+
+                        // Truncate title to 60 characters
+                        let title = if issue.title.len() > 60 {
+                            format!("{}...", &issue.title[..57])
+                        } else {
+                            issue.title.clone()
+                        };
+
+                        println!("  #{:<5} {:<15} {}", issue.number, state_str, title);
+                    }
+                }
+
+                println!();
+                println!("Use 'pleb status <issue_number>' for detailed issue info.");
+            } else {
+                println!("Daemon: stopped");
+                println!();
+                println!("No active daemon. Start with 'pleb watch --daemon'.");
+            }
+        }
+    }
 
     Ok(())
 }
