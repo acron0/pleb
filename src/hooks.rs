@@ -23,6 +23,21 @@ pub struct HooksConfig {
 
 /// Generate the Claude Code hooks configuration
 pub fn generate_hooks_json() -> Result<String> {
+    // Get the full path to the pleb executable for use in hooks
+    // This ensures Claude Code can find pleb even if ~/bin isn't in its PATH
+    let pleb_path = std::env::current_exe()
+        .context("Failed to get current executable path")?
+        .to_string_lossy()
+        .to_string();
+
+    // On Linux, if the binary was deleted/replaced while running, /proc/self/exe
+    // returns the path with " (deleted)" suffix. Strip it to get the actual path.
+    // The new binary at this path should still work for hooks.
+    let pleb_path = pleb_path
+        .strip_suffix(" (deleted)")
+        .unwrap_or(&pleb_path)
+        .to_string();
+
     let mut hooks = std::collections::HashMap::new();
 
     // Stop hook - transitions to waiting state
@@ -31,7 +46,7 @@ pub fn generate_hooks_json() -> Result<String> {
         vec![HookEntry {
             hooks: vec![Hook {
                 hook_type: "command".to_string(),
-                command: "pleb cc-run-hook Stop".to_string(),
+                command: format!("{} cc-run-hook Stop", pleb_path),
             }],
         }],
     );
@@ -42,7 +57,7 @@ pub fn generate_hooks_json() -> Result<String> {
         vec![HookEntry {
             hooks: vec![Hook {
                 hook_type: "command".to_string(),
-                command: "pleb cc-run-hook UserPromptSubmit".to_string(),
+                command: format!("{} cc-run-hook UserPromptSubmit", pleb_path),
             }],
         }],
     );
@@ -53,7 +68,7 @@ pub fn generate_hooks_json() -> Result<String> {
         vec![HookEntry {
             hooks: vec![Hook {
                 hook_type: "command".to_string(),
-                command: "pleb cc-run-hook PostToolUse".to_string(),
+                command: format!("{} cc-run-hook PostToolUse", pleb_path),
             }],
         }],
     );
@@ -64,7 +79,7 @@ pub fn generate_hooks_json() -> Result<String> {
         vec![HookEntry {
             hooks: vec![Hook {
                 hook_type: "command".to_string(),
-                command: "pleb cc-run-hook PermissionRequest".to_string(),
+                command: format!("{} cc-run-hook PermissionRequest", pleb_path),
             }],
         }],
     );
@@ -193,10 +208,11 @@ mod tests {
         assert!(json.contains("PostToolUse"));
         assert!(json.contains("PermissionRequest"));
 
-        // Verify commands use correct event names
-        assert!(json.contains("pleb cc-run-hook Stop"));
-        assert!(json.contains("pleb cc-run-hook UserPromptSubmit"));
-        assert!(json.contains("pleb cc-run-hook PostToolUse"));
-        assert!(json.contains("pleb cc-run-hook PermissionRequest"));
+        // Verify commands use full path to pleb executable and correct event names
+        // The path will vary by system, so we just check for the cc-run-hook part
+        assert!(json.contains("cc-run-hook Stop"));
+        assert!(json.contains("cc-run-hook UserPromptSubmit"));
+        assert!(json.contains("cc-run-hook PostToolUse"));
+        assert!(json.contains("cc-run-hook PermissionRequest"));
     }
 }
