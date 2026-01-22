@@ -763,6 +763,19 @@ async fn handle_status_command(issue_number: Option<u64>, config: Config) -> Res
             }
 
             println!("URL: {}", issue.html_url);
+
+            // Check for associated pull request
+            match github.get_pull_request_for_issue(num).await {
+                Ok(Some(pr_url)) => {
+                    println!("PR: {}", pr_url);
+                }
+                Ok(None) => {
+                    // No PR found, don't print anything
+                }
+                Err(e) => {
+                    tracing::debug!("Failed to check for PR: {}", e);
+                }
+            }
         }
         None => {
             // Show daemon status and all managed issues

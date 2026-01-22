@@ -312,6 +312,40 @@ impl GitHubClient {
         Ok(user.login)
     }
 
+    /// Find an open pull request associated with an issue number.
+    ///
+    /// Searches for PRs whose head branch starts with `{issue_number}-` which
+    /// matches pleb's branch naming convention: `{issue_number}-{slug}_{user}_{suffix}`.
+    /// Returns the PR URL if found.
+    pub async fn get_pull_request_for_issue(&self, issue_number: u64) -> Result<Option<String>> {
+        let branch_prefix = format!("{}-", issue_number);
+
+        let prs = self
+            .client
+            .pulls(&self.owner, &self.repo)
+            .list()
+            .state(octocrab::params::State::Open)
+            .send()
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to fetch pull requests from {}/{}",
+                    self.owner, self.repo
+                )
+            })?;
+
+        // Find a PR whose head branch starts with the issue number prefix
+        for pr in prs {
+            if pr.head.ref_field.starts_with(&branch_prefix) {
+                if let Some(url) = pr.html_url {
+                    return Ok(Some(url.to_string()));
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
     /// Fetch the issue body_html which contains signed URLs for private attachments.
     ///
     /// GitHub user-attachments (images/videos uploaded to issues) require special
