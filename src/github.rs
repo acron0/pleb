@@ -320,27 +320,44 @@ impl GitHubClient {
     pub async fn get_pull_request_for_issue(&self, issue_number: u64) -> Result<Option<String>> {
         let branch_prefix = format!("{}-", issue_number);
 
-        let prs = self
-            .client
-            .pulls(&self.owner, &self.repo)
-            .list()
-            .state(octocrab::params::State::Open)
-            .send()
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to fetch pull requests from {}/{}",
-                    self.owner, self.repo
-                )
-            })?;
+        // Paginate through all open PRs to find one matching the issue
+        let mut page: u32 = 1;
+        loop {
+            let prs = self
+                .client
+                .pulls(&self.owner, &self.repo)
+                .list()
+                .state(octocrab::params::State::Open)
+                .per_page(100)
+                .page(page)
+                .send()
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to fetch pull requests from {}/{}",
+                        self.owner, self.repo
+                    )
+                })?;
 
-        // Find a PR whose head branch starts with the issue number prefix
-        for pr in prs {
-            if pr.head.ref_field.starts_with(&branch_prefix) {
-                if let Some(url) = pr.html_url {
-                    return Ok(Some(url.to_string()));
+            if prs.items.is_empty() {
+                break;
+            }
+
+            // Find a PR whose head branch starts with the issue number prefix
+            for pr in &prs.items {
+                if pr.head.ref_field.starts_with(&branch_prefix) {
+                    if let Some(url) = &pr.html_url {
+                        return Ok(Some(url.to_string()));
+                    }
                 }
             }
+
+            // If we got fewer than 100, we've reached the last page
+            if prs.items.len() < 100 {
+                break;
+            }
+
+            page += 1;
         }
 
         Ok(None)
