@@ -6,7 +6,7 @@
 
 ## Interactive Issue Creation Command - 2026-01-20 14:08
 
-- **Add `pleb new` command for interactive issue creation** - Launch interactive prompt that asks user for issue description, generates title, creates GitHub issue with `pleb:ready` label. **Problem:** Currently must manually create issues in GitHub UI before pleb can pick them up. **Files:** `src/cli.rs` (add New command), `src/main.rs` (handle_new_command), `src/github.rs` (create_issue method). **Solution:** Use stdin prompt or editor for description, optionally use Claude to generate title from description, call GitHub API to create issue with label.
+- **Add `pleb new` command for interactive issue creation** - Launch interactive prompt that asks user for issue description, generates title, creates GitHub issue with `pleb:ready` label. **Problem:** Currently must manually create issues in GitHub UI before pleb can pick them up. **Files:** `src/cli.rs` (add New command), `src/main.rs` (handle_new_command), `src/github.rs` (create_issue method). **Solution:** Use stdin prompt or editor for description, optionally use Claude to generate title from description, call GitHub API to create issue with label. **Alternative:** Could be a slash command instead of CLI command - Claude could ask clarifying questions and construct a proper issue report with title, description, and acceptance criteria before creating it via `gh issue create`.
 
 ## Quick Session Without Issue - 2026-01-20 14:09
 

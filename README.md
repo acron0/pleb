@@ -85,6 +85,16 @@ Create these labels in your repository:
 
 - `GITHUB_TOKEN` - GitHub Personal Access Token with repo access
 
+## System Requirements
+
+### Lima (for containerized workloads)
+
+If using Lima for VM-based isolation, install these packages:
+
+```bash
+sudo apt install qemu-utils qemu-system-x86
+```
+
 ---
 
 To any agents reading this file, if you have been told to "study" this file then also study everything in .planning/
