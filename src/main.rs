@@ -107,7 +107,7 @@ fn main() -> Result<()> {
                     cli.config
                 )
             })?;
-            runtime.block_on(handle_cc_run_hook_command(&event, config))?;
+            runtime.block_on(handle_cc_run_hook_command(event, config))?;
         }
         _ => {
             // For all other commands, load and validate config
@@ -612,6 +612,7 @@ async fn handle_transition_command(
             &config.labels.waiting,
             &config.labels.working,
             &config.labels.done,
+            &config.labels.finished,
         ];
 
         for label in all_labels {
@@ -638,6 +639,7 @@ async fn handle_transition_command(
             PlebState::Waiting => &config.labels.waiting,
             PlebState::Working => &config.labels.working,
             PlebState::Done => &config.labels.done,
+            PlebState::Finished => &config.labels.finished,
         };
         github.add_label(issue_number, target_label).await?;
     }
@@ -754,6 +756,7 @@ async fn handle_status_command(issue_number: Option<u64>, config: Config) -> Res
                         PlebState::Waiting => "waiting",
                         PlebState::Working => "working",
                         PlebState::Done => "done",
+                        PlebState::Finished => "finished",
                     };
                     println!("State: {}", state_name);
                 }
@@ -804,6 +807,7 @@ async fn handle_status_command(issue_number: Option<u64>, config: Config) -> Res
                     &config.labels.waiting,
                     &config.labels.working,
                     &config.labels.done,
+                    &config.labels.finished,
                 ];
 
                 for label in labels {
@@ -830,6 +834,7 @@ async fn handle_status_command(issue_number: Option<u64>, config: Config) -> Res
                             Some(PlebState::Waiting) => "[waiting]",
                             Some(PlebState::Working) => "[working]",
                             Some(PlebState::Done) => "[done]",
+                            Some(PlebState::Finished) => "[finished]",
                             None => "[unknown]",
                         };
 
@@ -948,8 +953,9 @@ fn parse_state(state_str: &str) -> Result<PlebState> {
         "waiting" => Ok(PlebState::Waiting),
         "working" => Ok(PlebState::Working),
         "done" => Ok(PlebState::Done),
+        "finished" => Ok(PlebState::Finished),
         _ => anyhow::bail!(
-            "Invalid state '{}'. Valid states: ready, provisioning, waiting, working, done",
+            "Invalid state '{}'. Valid states: ready, provisioning, waiting, working, done, finished",
             state_str
         ),
     }

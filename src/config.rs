@@ -37,6 +37,8 @@ pub struct LabelConfig {
     pub working: String,
     #[serde(default = "default_label_done")]
     pub done: String,
+    #[serde(default = "default_label_finished")]
+    pub finished: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -61,8 +63,6 @@ pub struct PromptsConfig {
     pub dir: PathBuf,
     #[serde(default = "default_prompt_new_issue")]
     pub new_issue: String,
-    #[serde(default = "default_prompt_planning_done")]
-    pub planning_done: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -96,6 +96,10 @@ fn default_label_done() -> String {
     "pleb:done".to_string()
 }
 
+fn default_label_finished() -> String {
+    "pleb:finished".to_string()
+}
+
 fn default_claude_command() -> String {
     "claude".to_string()
 }
@@ -118,10 +122,6 @@ fn default_prompts_dir() -> PathBuf {
 
 fn default_prompt_new_issue() -> String {
     "new_issue.md".to_string()
-}
-
-fn default_prompt_planning_done() -> String {
-    "planning_done.md".to_string()
 }
 
 fn default_poll_interval_secs() -> u64 {
@@ -308,6 +308,7 @@ impl Config {
             &self.labels.waiting,
             &self.labels.working,
             &self.labels.done,
+            &self.labels.finished,
         ];
 
         for (i, label1) in labels.iter().enumerate() {
@@ -341,10 +342,6 @@ impl Config {
             !self.prompts.new_issue.is_empty(),
             "prompts.new_issue must not be empty"
         );
-        anyhow::ensure!(
-            !self.prompts.planning_done.is_empty(),
-            "prompts.planning_done must not be empty"
-        );
 
         anyhow::ensure!(
             self.prompts.dir.exists(),
@@ -357,13 +354,6 @@ impl Config {
             new_issue_path.exists(),
             "Prompt file does not exist: {}",
             new_issue_path.display()
-        );
-
-        let planning_done_path = self.prompts.dir.join(&self.prompts.planning_done);
-        anyhow::ensure!(
-            planning_done_path.exists(),
-            "Prompt file does not exist: {}",
-            planning_done_path.display()
         );
 
         // Validate watch config
@@ -406,6 +396,7 @@ provisioning = "custom:provisioning"
 waiting = "custom:waiting"
 working = "custom:working"
 done = "custom:done"
+finished = "custom:finished"
 
 [claude]
 command = "/usr/local/bin/claude"
@@ -418,7 +409,6 @@ worktree_base = "/custom/worktrees"
 [prompts]
 dir = "/custom/prompts"
 new_issue = "custom_new.md"
-planning_done = "custom_done.md"
 
 [watch]
 poll_interval_secs = 30
@@ -448,12 +438,33 @@ suffix = "custom-suffix"
         assert_eq!(config.github.repo, "myrepo");
         assert_eq!(config.github.token_env, "MY_GITHUB_TOKEN");
         assert_eq!(config.labels.ready, "custom:ready");
+        assert_eq!(config.labels.finished, "custom:finished");
         assert_eq!(config.claude.command, "/usr/local/bin/claude");
         assert_eq!(config.claude.args, vec!["--verbose", "--no-cache"]);
         assert_eq!(config.paths.repo_dir, PathBuf::from("/custom/repo"));
         assert_eq!(config.watch.poll_interval_secs, 30);
         assert_eq!(config.tmux.session_name, "custom-session");
         assert_eq!(config.branch.suffix, "custom-suffix");
+    }
+
+    #[test]
+    fn test_parse_custom_finished_label() {
+        let toml = r#"
+[github]
+owner = "testowner"
+repo = "testrepo"
+
+[labels]
+finished = "custom:finished"
+
+[claude]
+[paths]
+[prompts]
+[watch]
+[tmux]
+"#;
+        let config = Config::from_str(toml).expect("Should parse");
+        assert_eq!(config.labels.finished, "custom:finished");
     }
 
     #[test]
@@ -513,6 +524,7 @@ repo = "testrepo"
         assert_eq!(config.labels.waiting, "pleb:waiting");
         assert_eq!(config.labels.working, "pleb:working");
         assert_eq!(config.labels.done, "pleb:done");
+        assert_eq!(config.labels.finished, "pleb:finished");
 
         // Claude defaults
         assert_eq!(config.claude.command, "claude");
@@ -525,7 +537,6 @@ repo = "testrepo"
         // Prompts defaults
         assert_eq!(config.prompts.dir, PathBuf::from("./prompts"));
         assert_eq!(config.prompts.new_issue, "new_issue.md");
-        assert_eq!(config.prompts.planning_done, "planning_done.md");
 
         // Watch defaults
         assert_eq!(config.watch.poll_interval_secs, 5);

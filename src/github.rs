@@ -276,6 +276,7 @@ impl GitHubClient {
             PlebState::Waiting => config.waiting.clone(),
             PlebState::Working => config.working.clone(),
             PlebState::Done => config.done.clone(),
+            PlebState::Finished => config.finished.clone(),
         }
     }
 
@@ -293,6 +294,8 @@ impl GitHubClient {
                 return Some(PlebState::Working);
             } else if label == &labels_config.done {
                 return Some(PlebState::Done);
+            } else if label == &labels_config.finished {
+                return Some(PlebState::Finished);
             }
         }
 

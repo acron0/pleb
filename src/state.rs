@@ -11,6 +11,7 @@ pub enum PlebState {
     Waiting,
     Working,
     Done,
+    Finished,
 }
 
 impl PlebState {
@@ -20,9 +21,10 @@ impl PlebState {
         match self {
             PlebState::Ready => vec![PlebState::Provisioning],
             PlebState::Provisioning => vec![PlebState::Waiting, PlebState::Working],
-            PlebState::Waiting => vec![PlebState::Working],
-            PlebState::Working => vec![PlebState::Waiting, PlebState::Done],
-            PlebState::Done => vec![], // Terminal state
+            PlebState::Waiting => vec![PlebState::Working, PlebState::Finished],
+            PlebState::Working => vec![PlebState::Waiting, PlebState::Done, PlebState::Finished],
+            PlebState::Done => vec![PlebState::Finished],
+            PlebState::Finished => vec![], // Terminal state
         }
     }
 
@@ -173,13 +175,17 @@ mod tests {
         );
         assert_eq!(
             PlebState::Waiting.valid_transitions(),
-            vec![PlebState::Working]
+            vec![PlebState::Working, PlebState::Finished]
         );
         assert_eq!(
             PlebState::Working.valid_transitions(),
-            vec![PlebState::Waiting, PlebState::Done]
+            vec![PlebState::Waiting, PlebState::Done, PlebState::Finished]
         );
-        assert_eq!(PlebState::Done.valid_transitions(), vec![]);
+        assert_eq!(
+            PlebState::Done.valid_transitions(),
+            vec![PlebState::Finished]
+        );
+        assert_eq!(PlebState::Finished.valid_transitions(), vec![]);
     }
 
     #[test]
@@ -188,7 +194,8 @@ mod tests {
         assert!(!PlebState::Provisioning.is_terminal());
         assert!(!PlebState::Waiting.is_terminal());
         assert!(!PlebState::Working.is_terminal());
-        assert!(PlebState::Done.is_terminal());
+        assert!(!PlebState::Done.is_terminal());
+        assert!(PlebState::Finished.is_terminal());
     }
 
     #[test]
@@ -257,11 +264,31 @@ mod tests {
     #[test]
     fn test_terminal_state_transition() {
         let mut tracker = IssueTracker::new();
-        tracker.track(123, PlebState::Done);
+        tracker.track(123, PlebState::Finished);
 
-        // Cannot transition from Done (terminal state)
+        // Cannot transition from Finished (terminal state)
         let result = tracker.transition(123, PlebState::Working);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_transition_to_finished() {
+        let mut tracker = IssueTracker::new();
+
+        // From Working to Finished
+        tracker.track(123, PlebState::Working);
+        tracker.transition(123, PlebState::Finished).unwrap();
+        assert_eq!(tracker.get(123).unwrap().state, PlebState::Finished);
+
+        // From Waiting to Finished
+        tracker.track(456, PlebState::Waiting);
+        tracker.transition(456, PlebState::Finished).unwrap();
+        assert_eq!(tracker.get(456).unwrap().state, PlebState::Finished);
+
+        // From Done to Finished
+        tracker.track(789, PlebState::Done);
+        tracker.transition(789, PlebState::Finished).unwrap();
+        assert_eq!(tracker.get(789).unwrap().state, PlebState::Finished);
     }
 
     #[test]
