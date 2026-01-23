@@ -73,18 +73,25 @@ impl TmuxManager {
     }
 
     /// Create a new window for an issue in the pleb session
-    /// Window name: "issue-{number}"
+    /// Window name: "{branch_name}" (e.g., "2592-add-invoices-table_acron_pleb")
     /// Working directory: the worktree path
     #[allow(dead_code)]
-    pub async fn create_window(&self, issue_number: u64, working_dir: &Path) -> Result<()> {
+    pub async fn create_window(&self, branch_name: &str, working_dir: &Path) -> Result<()> {
         // Ensure session exists first
         self.ensure_session().await?;
 
-        let window_name = format!("issue-{}", issue_number);
+        let window_name = branch_name.to_string();
+
+        // Extract issue number from branch name (first part before '-')
+        let issue_number = branch_name
+            .split('-')
+            .next()
+            .and_then(|s| s.parse::<u64>().ok())
+            .with_context(|| format!("Failed to extract issue number from branch name: {}", branch_name))?;
 
         // Check if window already exists
         if self.window_exists(issue_number).await? {
-            tracing::info!("Window {} already exists", window_name);
+            tracing::info!("Window for issue #{} already exists", issue_number);
             return Ok(());
         }
 
@@ -112,9 +119,10 @@ impl TmuxManager {
     }
 
     /// Check if a window exists for an issue
+    /// Searches for windows with names starting with "{issue_number}-"
     #[allow(dead_code)]
     pub async fn window_exists(&self, issue_number: u64) -> Result<bool> {
-        let window_name = format!("issue-{}", issue_number);
+        let window_prefix = format!("{}-", issue_number);
 
         let output = Command::new("tmux")
             .args([
@@ -134,10 +142,15 @@ impl TmuxManager {
         }
 
         let windows_output = String::from_utf8_lossy(&output.stdout);
-        Ok(windows_output.lines().any(|line| line == window_name))
+        // Strip any state suffix (e.g., ":waiting") before checking prefix
+        Ok(windows_output.lines().any(|line| {
+            let base_name = line.split(':').next().unwrap_or(line);
+            base_name.starts_with(&window_prefix)
+        }))
     }
 
     /// List all issue windows in the session
+    /// Returns issue numbers extracted from branch-name windows
     pub async fn list_windows(&self) -> Result<Vec<u64>> {
         let output = Command::new("tmux")
             .args([
@@ -160,9 +173,12 @@ impl TmuxManager {
         let mut issue_numbers = Vec::new();
 
         for line in windows_output.lines() {
-            // Parse "issue-{number}" format
-            if let Some(num_str) = line.strip_prefix("issue-") {
-                if let Ok(number) = num_str.parse::<u64>() {
+            // Strip state suffix if present (e.g., "2592-branch:waiting" -> "2592-branch")
+            let base_name = line.split(':').next().unwrap_or(line);
+
+            // Extract issue number from branch name (first part before '-')
+            if let Some(first_part) = base_name.split('-').next() {
+                if let Ok(number) = first_part.parse::<u64>() {
                     issue_numbers.push(number);
                 }
             }
@@ -172,72 +188,170 @@ impl TmuxManager {
     }
 
     /// Kill a window for an issue
+    /// Finds the window by searching for names starting with "{issue_number}-"
     #[allow(dead_code)]
     pub async fn kill_window(&self, issue_number: u64) -> Result<()> {
-        let window_name = format!("issue-{}", issue_number);
-        let target = format!("{}:{}", self.session_name, window_name);
-
-        tracing::info!("Killing tmux window: {}", target);
-        let status = Command::new("tmux")
-            .args(["kill-window", "-t", &target])
-            .status()
+        // Find the window name by listing windows
+        let output = Command::new("tmux")
+            .args([
+                "list-windows",
+                "-t",
+                &self.session_name,
+                "-F",
+                "#{window_name}",
+            ])
+            .output()
             .await
-            .context("Failed to kill tmux window")?;
+            .context("Failed to list tmux windows")?;
 
-        if !status.success() {
-            tracing::warn!("Window {} may not exist or was already killed", target);
+        if !output.status.success() {
+            tracing::warn!("Session {} doesn't exist, nothing to kill", self.session_name);
+            return Ok(());
         }
 
+        let windows_output = String::from_utf8_lossy(&output.stdout);
+        let window_prefix = format!("{}-", issue_number);
+
+        // Find the window matching this issue
+        for line in windows_output.lines() {
+            let base_name = line.split(':').next().unwrap_or(line);
+            if base_name.starts_with(&window_prefix) {
+                let target = format!("{}:{}", self.session_name, line);
+                tracing::info!("Killing tmux window: {}", target);
+                let status = Command::new("tmux")
+                    .args(["kill-window", "-t", &target])
+                    .status()
+                    .await
+                    .context("Failed to kill tmux window")?;
+
+                if !status.success() {
+                    tracing::warn!("Window {} may not exist or was already killed", target);
+                }
+                return Ok(());
+            }
+        }
+
+        tracing::warn!("No window found for issue #{}", issue_number);
         Ok(())
     }
 
     /// Send keys to a window (for starting Claude, etc.)
+    /// Finds the window by searching for names starting with "{issue_number}-"
     pub async fn send_keys(&self, issue_number: u64, keys: &str) -> Result<()> {
-        let window_name = format!("issue-{}", issue_number);
-        let target = format!("{}:{}", self.session_name, window_name);
-
-        tracing::debug!("Sending keys to {}: {}", target, keys);
-        Command::new("tmux")
-            .args(["send-keys", "-t", &target, keys, "Enter"])
-            .status()
+        // Find the window name by listing windows
+        let output = Command::new("tmux")
+            .args([
+                "list-windows",
+                "-t",
+                &self.session_name,
+                "-F",
+                "#{window_name}",
+            ])
+            .output()
             .await
-            .context("Failed to send keys to tmux window")?;
+            .context("Failed to list tmux windows")?;
 
-        Ok(())
-    }
+        let windows_output = String::from_utf8_lossy(&output.stdout);
+        let window_prefix = format!("{}-", issue_number);
 
-    /// Rename a window to include state indicator (e.g., "issue-42-waiting")
-    pub async fn rename_window(&self, issue_number: u64, state: &str) -> Result<()> {
-        // Target the window by its current name pattern (issue-N or issue-N-*)
-        let target = format!("{}:issue-{}", self.session_name, issue_number);
-        let new_name = format!("issue-{}-{}", issue_number, state);
-
-        tracing::debug!("Renaming window {} to {}", target, new_name);
-        let status = Command::new("tmux")
-            .args(["rename-window", "-t", &target, &new_name])
-            .status()
-            .await
-            .context("Failed to rename tmux window")?;
-
-        if !status.success() {
-            tracing::warn!("Failed to rename window to {}", new_name);
+        // Find the window matching this issue
+        for line in windows_output.lines() {
+            let base_name = line.split(':').next().unwrap_or(line);
+            if base_name.starts_with(&window_prefix) {
+                let target = format!("{}:{}", self.session_name, line);
+                tracing::debug!("Sending keys to {}: {}", target, keys);
+                Command::new("tmux")
+                    .args(["send-keys", "-t", &target, keys, "Enter"])
+                    .status()
+                    .await
+                    .context("Failed to send keys to tmux window")?;
+                return Ok(());
+            }
         }
 
+        anyhow::bail!("No window found for issue #{}", issue_number)
+    }
+
+    /// Rename a window to include state indicator (e.g., "2592-branch:waiting")
+    /// Finds the window by searching for names starting with "{issue_number}-"
+    pub async fn rename_window(&self, issue_number: u64, state: &str) -> Result<()> {
+        // Find the window name by listing windows
+        let output = Command::new("tmux")
+            .args([
+                "list-windows",
+                "-t",
+                &self.session_name,
+                "-F",
+                "#{window_name}",
+            ])
+            .output()
+            .await
+            .context("Failed to list tmux windows")?;
+
+        let windows_output = String::from_utf8_lossy(&output.stdout);
+        let window_prefix = format!("{}-", issue_number);
+
+        // Find the window matching this issue
+        for line in windows_output.lines() {
+            let base_name = line.split(':').next().unwrap_or(line);
+            if base_name.starts_with(&window_prefix) {
+                let target = format!("{}:{}", self.session_name, line);
+                let new_name = format!("{}:{}", base_name, state);
+
+                tracing::debug!("Renaming window {} to {}", target, new_name);
+                let status = Command::new("tmux")
+                    .args(["rename-window", "-t", &target, &new_name])
+                    .status()
+                    .await
+                    .context("Failed to rename tmux window")?;
+
+                if !status.success() {
+                    tracing::warn!("Failed to rename window to {}", new_name);
+                }
+                return Ok(());
+            }
+        }
+
+        tracing::warn!("No window found for issue #{} to rename", issue_number);
         Ok(())
     }
 
     /// Select a specific pane in a window (e.g., pane 0 after on_provision hooks)
+    /// Finds the window by searching for names starting with "{issue_number}-"
     pub async fn select_pane(&self, issue_number: u64, pane_index: u32) -> Result<()> {
-        let target = format!("{}:issue-{}:.{}", self.session_name, issue_number, pane_index);
-
-        tracing::debug!("Selecting pane {}", target);
-        Command::new("tmux")
-            .args(["select-pane", "-t", &target])
-            .status()
+        // Find the window name by listing windows
+        let output = Command::new("tmux")
+            .args([
+                "list-windows",
+                "-t",
+                &self.session_name,
+                "-F",
+                "#{window_name}",
+            ])
+            .output()
             .await
-            .context("Failed to select tmux pane")?;
+            .context("Failed to list tmux windows")?;
 
-        Ok(())
+        let windows_output = String::from_utf8_lossy(&output.stdout);
+        let window_prefix = format!("{}-", issue_number);
+
+        // Find the window matching this issue
+        for line in windows_output.lines() {
+            let base_name = line.split(':').next().unwrap_or(line);
+            if base_name.starts_with(&window_prefix) {
+                let target = format!("{}:{}:.{}", self.session_name, line, pane_index);
+
+                tracing::debug!("Selecting pane {}", target);
+                Command::new("tmux")
+                    .args(["select-pane", "-t", &target])
+                    .status()
+                    .await
+                    .context("Failed to select tmux pane")?;
+                return Ok(());
+            }
+        }
+
+        anyhow::bail!("No window found for issue #{} to select pane", issue_number)
     }
 
     /// Attach to the pleb session (blocking - replaces current terminal)

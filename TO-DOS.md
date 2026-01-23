@@ -12,3 +12,7 @@
 
 - **Add `pleb quick <branch-name>` command** - Provision tmux window + worktree without a GitHub issue. **Problem:** Sometimes need ad-hoc Claude sessions for quick tasks that don't warrant a full issue. **Files:** `src/cli.rs` (add Quick command), `src/main.rs` (handle_quick_command), `src/tmux.rs`, `src/worktree.rs`. **Solution:** Create worktree with given branch name, tmux window named after branch, invoke Claude with minimal prompt, skip all GitHub label management.
 
+## Restore Command for Session Verification - 2026-01-23 14:26
+
+- **Add `pleb restore` command** - Check that all pleb-associated issues have a tmux session and worktree, recreate missing ones. **Problem:** Sessions can be lost due to daemon restarts, crashes, or manual tmux/worktree cleanup, leaving issues in working/waiting/done states without active environments. **Files:** `src/cli.rs` (add Restore command), `src/main.rs` (handle_restore_command), `src/tmux.rs` (window_exists), `src/worktree.rs` (worktree_exists). **Solution:** Fetch all issues with working/waiting/done labels, check if tmux window and worktree exist for each, recreate missing sessions using existing process_issue logic, log which issues were restored.
+

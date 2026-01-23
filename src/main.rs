@@ -593,7 +593,7 @@ impl Orchestrator {
         }
 
         // Create tmux window
-        self.tmux.create_window(issue.number, &worktree_path).await?;
+        self.tmux.create_window(&branch_name, &worktree_path).await?;
 
         // Create context for template rendering (used by both provision hooks and prompts)
         // Note: We use a placeholder body here for provision hooks; the real processed body
