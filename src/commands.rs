@@ -68,12 +68,35 @@ The command will show:
 - GitHub issue URL
 "#;
 
+/// Slash command content for `/pleb-cleanup`
+pub const PLEB_CLEANUP_COMMAND: &str = r#"# Pleb Cleanup
+
+Clean up a finished issue by removing the worktree and terminating the tmux window.
+
+## Steps
+1. Extract issue number from current directory path
+2. **ALWAYS ask for confirmation first**: "This will terminate this tmux window and delete the worktree. Are you sure? (yes/no)"
+3. Wait for user response
+4. If user responds with anything other than "yes", abort and say "Cleanup cancelled"
+5. If user confirms with "yes":
+   - Warn user: "This window is about to be terminated. Goodbye!"
+   - Run: `pleb cleanup <issue-number>`
+   - Note: You should use /exit or stop after running cleanup since this session will be killed
+
+## Important
+- NEVER skip the confirmation step - this is a destructive operation
+- Only proceed if user explicitly types "yes"
+- Warn user that the window will be terminated before running the cleanup
+- After cleanup, this Claude Code session will be terminated, so exit gracefully
+"#;
+
 /// Generate command file content for a given command name
 pub fn generate_command_file(name: &str) -> Option<String> {
     match name {
         "pleb-shipit" => Some(PLEB_SHIPIT_COMMAND.to_string()),
         "pleb-abandon" => Some(PLEB_ABANDON_COMMAND.to_string()),
         "pleb-status" => Some(PLEB_STATUS_COMMAND.to_string()),
+        "pleb-cleanup" => Some(PLEB_CLEANUP_COMMAND.to_string()),
         _ => None,
     }
 }
@@ -91,7 +114,7 @@ pub fn install_commands(path: &Path) -> Result<()> {
     }
 
     // Install each command
-    let commands = vec!["pleb-shipit", "pleb-abandon", "pleb-status"];
+    let commands = vec!["pleb-shipit", "pleb-abandon", "pleb-status", "pleb-cleanup"];
     let num_commands = commands.len();
 
     for cmd_name in commands {
@@ -124,6 +147,7 @@ mod tests {
         assert!(generate_command_file("pleb-shipit").is_some());
         assert!(generate_command_file("pleb-abandon").is_some());
         assert!(generate_command_file("pleb-status").is_some());
+        assert!(generate_command_file("pleb-cleanup").is_some());
 
         // Test invalid command name
         assert!(generate_command_file("invalid-command").is_none());
@@ -145,5 +169,11 @@ mod tests {
         let status = generate_command_file("pleb-status").unwrap();
         assert!(status.contains("Pleb Status"));
         assert!(status.contains("pleb status"));
+
+        let cleanup = generate_command_file("pleb-cleanup").unwrap();
+        assert!(cleanup.contains("Pleb Cleanup"));
+        assert!(cleanup.contains("pleb cleanup"));
+        assert!(cleanup.contains("confirmation"));
+        assert!(cleanup.contains("yes"));
     }
 }

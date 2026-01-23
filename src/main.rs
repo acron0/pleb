@@ -963,6 +963,39 @@ async fn handle_status_command(issue_number: Option<u64>, config: Config) -> Res
     Ok(())
 }
 
+async fn handle_cleanup_command(issue_number: u64, config: Config) -> Result<()> {
+    // Create managers directly (cleanup doesn't need daemon or full orchestrator)
+    let worktree = WorktreeManager::new(&config.paths);
+    let tmux = TmuxManager::new(&config.tmux);
+
+    // Check if worktree exists
+    let worktree_path = worktree.get_worktree_path(issue_number);
+    let worktree_exists = worktree_path.is_some();
+
+    // Check if tmux window exists
+    let window_exists = tmux.window_exists(issue_number).await?;
+
+    if !worktree_exists && !window_exists {
+        println!("Issue #{} has no worktree or tmux window to clean up", issue_number);
+        return Ok(());
+    }
+
+    // Remove worktree
+    if worktree_exists {
+        worktree.remove_worktree(issue_number).await?;
+        println!("Removed worktree for issue #{}", issue_number);
+    }
+
+    // Kill tmux window
+    if window_exists {
+        tmux.kill_window(issue_number).await?;
+        println!("Killed tmux window for issue #{}", issue_number);
+    }
+
+    println!("Successfully cleaned up issue #{}", issue_number);
+    Ok(())
+}
+
 async fn handle_cc_run_hook_command(event: &str, config: Config) -> Result<()> {
     use ipc::{HookMessage, IpcClient};
 
@@ -1328,6 +1361,9 @@ async fn handle_command(command: Commands, config: Config) -> Result<()> {
         Commands::Config { .. } => {
             // Already handled above, shouldn't reach here
             unreachable!("Config command should be handled before this point");
+        }
+        Commands::Cleanup { issue_number } => {
+            handle_cleanup_command(issue_number, config).await?;
         }
     }
 

@@ -76,6 +76,12 @@ pub enum Commands {
         #[command(subcommand)]
         action: ConfigAction,
     },
+
+    #[command(about = "Clean up a finished issue (remove worktree and kill tmux window)")]
+    Cleanup {
+        /// Issue number
+        issue_number: u64,
+    },
 }
 
 #[derive(Subcommand, Clone)]
