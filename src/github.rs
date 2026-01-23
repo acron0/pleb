@@ -368,6 +368,96 @@ impl GitHubClient {
         Ok(None)
     }
 
+    /// Check if a PR associated with an issue has been merged.
+    ///
+    /// Searches for PRs whose head branch starts with `{issue_number}-` which
+    /// matches pleb's branch naming convention.
+    ///
+    /// Returns:
+    /// - Ok(None) if no PR found for this issue
+    /// - Ok(Some(true)) if PR exists and is merged
+    /// - Ok(Some(false)) if PR exists but not merged
+    ///
+    /// Uses `gh` CLI which has its own authentication.
+    /// Handles errors gracefully (gh not installed, network issues) - logs warning, returns Ok(None)
+    pub async fn check_pr_merged(&self, issue_number: u64) -> Result<Option<bool>> {
+        use std::process::Command;
+
+        // Use gh CLI to list PRs (all states) and filter by branch prefix
+        // gh pr list --repo owner/repo --state all --json headRefName,state,mergedAt
+        let output = Command::new("gh")
+            .args([
+                "pr",
+                "list",
+                "--repo",
+                &format!("{}/{}", self.owner, self.repo),
+                "--state",
+                "all",
+                "--json",
+                "headRefName,state,mergedAt",
+                "--limit",
+                "200",
+            ])
+            .output();
+
+        // Handle gh command errors gracefully
+        let output = match output {
+            Ok(output) => output,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to execute gh command for issue #{}: {}. Assuming no PR or gh not available.",
+                    issue_number,
+                    e
+                );
+                return Ok(None);
+            }
+        };
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::warn!(
+                "gh pr list failed for issue #{}: {}. Assuming no PR or gh not available.",
+                issue_number,
+                stderr
+            );
+            return Ok(None);
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let prs: Vec<serde_json::Value> = match serde_json::from_str(&stdout) {
+            Ok(prs) => prs,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to parse gh output for issue #{}: {}",
+                    issue_number,
+                    e
+                );
+                return Ok(None);
+            }
+        };
+
+        let branch_prefix = format!("{}-", issue_number);
+
+        for pr in prs {
+            if let Some(head_ref) = pr.get("headRefName").and_then(|v| v.as_str()) {
+                if head_ref.starts_with(&branch_prefix) {
+                    // Found a matching PR, check if it's merged
+                    let state = pr.get("state").and_then(|v| v.as_str());
+                    let merged_at = pr.get("mergedAt");
+
+                    // A PR is merged if state is "MERGED" or mergedAt is not null
+                    let is_merged = state == Some("MERGED")
+                        || (merged_at.is_some() && !merged_at.unwrap().is_null());
+
+                    return Ok(Some(is_merged));
+                }
+            }
+        }
+
+        // No PR found for this issue
+        Ok(None)
+    }
+
     /// Fetch the issue body_html which contains signed URLs for private attachments.
     ///
     /// GitHub user-attachments (images/videos uploaded to issues) require special

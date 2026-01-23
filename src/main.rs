@@ -281,6 +281,12 @@ impl Orchestrator {
                     if let Err(e) = self.poll_cycle().await {
                         tracing::error!("Poll cycle error: {}", e);
                     }
+
+                    // Check for merged PRs on active issues
+                    if let Err(e) = self.check_merged_prs().await {
+                        tracing::error!("Check merged PRs error: {}", e);
+                    }
+
                     tokio::time::sleep(poll_interval).await;
                 } => {
                     // Continue to next cycle
@@ -430,6 +436,101 @@ impl Orchestrator {
 
         if processed_count > 0 {
             tracing::info!("Provisioned {} new issue(s)", processed_count);
+        }
+
+        Ok(())
+    }
+
+    /// Check all active issues (working, waiting, done) for merged PRs and transition to finished
+    async fn check_merged_prs(&mut self) -> Result<()> {
+        tracing::debug!("Checking for merged PRs...");
+
+        // Fetch issues with working, waiting, and done labels (all active states)
+        let labels_to_check = [
+            &self.config.labels.working,
+            &self.config.labels.waiting,
+            &self.config.labels.done,
+        ];
+
+        let mut all_issues = Vec::new();
+        for label in labels_to_check {
+            match self.github.get_issues_with_label(label).await {
+                Ok(issues) => all_issues.extend(issues),
+                Err(e) => {
+                    tracing::error!("Failed to fetch issues with label '{}': {}. Will retry on next poll.", label, e);
+                    continue;
+                }
+            }
+        }
+
+        if all_issues.is_empty() {
+            tracing::debug!("No active issues to check for merged PRs");
+            return Ok(());
+        }
+
+        // Check each issue for merged PR
+        for issue in all_issues {
+            // Get current state
+            let current_state = match self.github.get_pleb_state(&issue, &self.config.labels) {
+                Some(state) => state,
+                None => {
+                    tracing::debug!("Issue #{} has no pleb state, skipping", issue.number);
+                    continue;
+                }
+            };
+
+            // Check if PR is merged
+            match self.github.check_pr_merged(issue.number).await {
+                Ok(Some(true)) => {
+                    // PR is merged, transition to finished
+                    tracing::info!(
+                        "Issue #{} PR merged, transitioning from {:?} to Finished",
+                        issue.number,
+                        current_state
+                    );
+
+                    if let Err(e) = self.github
+                        .transition_state(
+                            issue.number,
+                            current_state,
+                            PlebState::Finished,
+                            &self.config.labels,
+                        )
+                        .await
+                    {
+                        tracing::error!(
+                            "Failed to transition issue #{} to finished: {}",
+                            issue.number,
+                            e
+                        );
+                        continue;
+                    }
+
+                    // Update tmux window title to "finished"
+                    if let Err(e) = self.tmux.rename_window(issue.number, "finished").await {
+                        tracing::warn!(
+                            "Failed to rename tmux window for issue #{}: {}",
+                            issue.number,
+                            e
+                        );
+                    }
+                }
+                Ok(Some(false)) => {
+                    // PR exists but not merged yet
+                    tracing::debug!("Issue #{} PR exists but not merged yet", issue.number);
+                }
+                Ok(None) => {
+                    // No PR found for this issue (may have just been provisioned)
+                    tracing::debug!("Issue #{} has no PR yet", issue.number);
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Error checking PR merge status for issue #{}: {}",
+                        issue.number,
+                        e
+                    );
+                }
+            }
         }
 
         Ok(())

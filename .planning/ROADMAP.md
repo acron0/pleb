@@ -116,7 +116,7 @@ Plans:
 
 Plans:
 - [x] 11-01: Config & state foundation (finished label, Finished state)
-- [ ] 11-02: PR merge detection in watch loop
+- [x] 11-02: PR merge detection in watch loop
 - [ ] 11-03: Cleanup command and /pleb-cleanup slash command
 
 ## Progress
@@ -133,4 +133,4 @@ Plans:
 | 8. Generic Hooks & IPC | 1/1 | Complete | 2026-01-16 |
 | 9. Issue Media Downloading | 1/1 | Complete | 2026-01-16 |
 | 10. Provision Hooks | 1/1 | Complete | 2026-01-19 |
-| 11. PR Merge Detection & Cleanup | 1/3 | In Progress | - |
+| 11. PR Merge Detection & Cleanup | 2/3 | In Progress | - |
