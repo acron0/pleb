@@ -16,7 +16,7 @@ Build an issue-driven Claude Code orchestrator that watches GitHub for labeled i
 - [x] **Phase 8: Generic Hooks & IPC** - Generic hook events, full payload forwarding to daemon
 - [x] **Phase 9: Issue Media Downloading** - Download images/videos from GitHub issues to local files
 - [x] **Phase 10: Provision Hooks** - Configurable shell commands run after window creation, before Claude
-- [ ] **Phase 11: PR Merge Detection & Cleanup** - Track merged PRs, new "finished" state, cleanup command
+- [x] **Phase 11: PR Merge Detection & Cleanup** - Track merged PRs, new "finished" state, cleanup command
 
 ## Phase Details
 
@@ -112,12 +112,12 @@ Plans:
 ### Phase 11: PR Merge Detection & Cleanup
 **Goal**: Automatically detect merged PRs, transition to "finished" state, enable cleanup of worktrees/sessions
 **Depends on**: Phase 2 (GitHub), Phase 3 (session management), Phase 5 (hooks)
-**Status**: In Progress
+**Status**: Complete
 
 Plans:
 - [x] 11-01: Config & state foundation (finished label, Finished state)
 - [x] 11-02: PR merge detection in watch loop
-- [ ] 11-03: Cleanup command and /pleb-cleanup slash command
+- [x] 11-03: Cleanup command and /pleb-cleanup slash command
 
 ## Progress
 
@@ -133,4 +133,4 @@ Plans:
 | 8. Generic Hooks & IPC | 1/1 | Complete | 2026-01-16 |
 | 9. Issue Media Downloading | 1/1 | Complete | 2026-01-16 |
 | 10. Provision Hooks | 1/1 | Complete | 2026-01-19 |
-| 11. PR Merge Detection & Cleanup | 2/3 | In Progress | - |
+| 11. PR Merge Detection & Cleanup | 3/3 | Complete | 2026-01-23 |
