@@ -996,6 +996,124 @@ async fn handle_cleanup_command(issue_number: u64, config: Config) -> Result<()>
     Ok(())
 }
 
+async fn handle_restore_command(config: Config) -> Result<()> {
+    // Create GitHub client, TmuxManager, and WorktreeManager
+    let github = GitHubClient::new(&config.github).await?;
+    let worktree = WorktreeManager::new(&config.paths);
+
+    // Create TmuxManager with GitHub token
+    let token = std::env::var(&config.github.token_env)
+        .with_context(|| format!("Missing environment variable: {}", config.github.token_env))?;
+    let tmux = TmuxManager::new(&config.tmux)
+        .with_env(&config.github.token_env, token.clone());
+
+    // Get authenticated username for branch naming
+    let gh_username = github.get_authenticated_user().await?;
+
+    // Fetch all open issues with managed labels (working, waiting, done, finished)
+    let labels_to_check = [
+        &config.labels.working,
+        &config.labels.waiting,
+        &config.labels.done,
+        &config.labels.finished,
+    ];
+
+    let mut all_issues = Vec::new();
+    for label in labels_to_check {
+        match github.get_issues_with_label(label).await {
+            Ok(issues) => all_issues.extend(issues),
+            Err(e) => {
+                tracing::error!("Failed to fetch issues with label '{}': {}", label, e);
+                continue;
+            }
+        }
+    }
+
+    // Deduplicate issues (an issue may have multiple labels)
+    let mut seen = HashSet::new();
+    all_issues.retain(|issue| seen.insert(issue.number));
+
+    if all_issues.is_empty() {
+        println!("No managed issues found to restore");
+        return Ok(());
+    }
+
+    println!("Checking {} managed issue(s)...", all_issues.len());
+
+    let mut restored_count = 0;
+
+    for issue in &all_issues {
+        let issue_number = issue.number;
+
+        // Check if tmux window exists
+        let window_exists = tmux.window_exists(issue_number).await?;
+
+        // Check if worktree exists
+        let worktree_path = worktree.get_worktree_path(issue_number);
+        let worktree_exists = worktree_path.is_some();
+
+        // If both exist, skip
+        if window_exists && worktree_exists {
+            tracing::debug!("Issue #{} already has session", issue_number);
+            continue;
+        }
+
+        // Either worktree or tmux window is missing, restore the session
+        println!("Restoring session for issue #{}: {}", issue_number, issue.title);
+
+        // Construct branch name: {issue_number}-{slug}_{username}_{suffix}
+        let slug = slugify(&issue.title, 30);
+        let branch_name = format!(
+            "{}-{}_{}_{}",
+            issue_number,
+            slug,
+            gh_username,
+            config.branch.suffix
+        );
+
+        // Create worktree (idempotent)
+        let worktree_path = worktree
+            .create_worktree(issue_number, &branch_name, &branch_name)
+            .await?;
+
+        // Copy pleb.toml to worktree if it exists
+        let pleb_toml_src = Path::new("pleb.toml");
+        if pleb_toml_src.exists() {
+            let pleb_toml_dest = worktree_path.join("pleb.toml");
+            if let Err(e) = std::fs::copy(pleb_toml_src, &pleb_toml_dest) {
+                tracing::warn!(
+                    "Failed to copy pleb.toml to worktree for issue #{}: {}",
+                    issue_number,
+                    e
+                );
+            }
+        }
+
+        // Install hooks
+        if let Err(e) = hooks::install_hooks(&worktree_path) {
+            tracing::warn!(
+                "Failed to install hooks for issue #{}: {}",
+                issue_number,
+                e
+            );
+        }
+
+        // Create tmux window (idempotent)
+        tmux.create_window(&branch_name, &worktree_path).await?;
+
+        println!("Restored session for issue #{}", issue_number);
+        restored_count += 1;
+    }
+
+    println!(
+        "Checked {} issue(s), restored {} session(s)",
+        all_issues.len(),
+        restored_count
+    );
+
+    Ok(())
+}
+
 async fn handle_cc_run_hook_command(event: &str, config: Config) -> Result<()> {
     use ipc::{HookMessage, IpcClient};
 
@@ -1364,6 +1482,9 @@ async fn handle_command(command: Commands, config: Config) -> Result<()> {
         }
         Commands::Cleanup { issue_number } => {
             handle_cleanup_command(issue_number, config).await?;
+        }
+        Commands::Restore => {
+            handle_restore_command(config).await?;
         }
     }
 

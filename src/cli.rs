@@ -82,6 +82,9 @@ pub enum Commands {
         /// Issue number
         issue_number: u64,
     },
+
+    #[command(about = "Verify and recreate missing tmux sessions and worktrees for managed issues")]
+    Restore,
 }
 
 #[derive(Subcommand, Clone)]

@@ -17,6 +17,7 @@ Build an issue-driven Claude Code orchestrator that watches GitHub for labeled i
 - [x] **Phase 9: Issue Media Downloading** - Download images/videos from GitHub issues to local files
 - [x] **Phase 10: Provision Hooks** - Configurable shell commands run after window creation, before Claude
 - [x] **Phase 11: PR Merge Detection & Cleanup** - Track merged PRs, new "finished" state, cleanup command
+- [x] **Phase 12: Restore Command** - Verify and recreate missing tmux sessions and worktrees for managed issues
 
 ## Phase Details
 
@@ -119,6 +120,14 @@ Plans:
 - [x] 11-02: PR merge detection in watch loop
 - [x] 11-03: Cleanup command and /pleb-cleanup slash command
 
+### Phase 12: Restore Command
+**Goal**: Verify all pleb-managed issues have tmux sessions and worktrees, recreate missing ones
+**Depends on**: Phase 2 (GitHub), Phase 3 (session management)
+**Status**: Complete
+
+Plans:
+- [x] 12-01: Restore command (CLI addition, restore logic, session verification)
+
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
@@ -134,3 +143,4 @@ Plans:
 | 9. Issue Media Downloading | 1/1 | Complete | 2026-01-16 |
 | 10. Provision Hooks | 1/1 | Complete | 2026-01-19 |
 | 11. PR Merge Detection & Cleanup | 3/3 | Complete | 2026-01-23 |
+| 12. Restore Command | 1/1 | Complete | 2026-01-26 |
