@@ -1007,6 +1007,12 @@ async fn handle_restore_command(config: Config) -> Result<()> {
     let tmux = TmuxManager::new(&config.tmux)
         .with_env(&config.github.token_env, token.clone());
 
+    // Initialize template engine, Claude runner, and media client for provisioning
+    let templates = TemplateEngine::new(&config.prompts)?;
+    let claude = ClaudeRunner::new(&config.claude, &config.tmux);
+    let media_client = reqwest::Client::new();
+    let daemon_dir = config.daemon_dir()?;
+
     // Get authenticated username for branch naming
     let gh_username = github.get_authenticated_user().await?;
 
@@ -1100,6 +1106,67 @@ async fn handle_restore_command(config: Config) -> Result<()> {
 
         // Create tmux window (idempotent)
         tmux.create_window(&branch_name, &worktree_path).await?;
+
+        // Run on_provision hooks with template variable support
+        let provision_context = IssueContext::from_issue(
+            issue,
+            &branch_name,
+            &worktree_path,
+            &config.paths.repo_dir,
+        );
+
+        for cmd in &config.provision.on_provision {
+            let rendered_cmd = templates.render_string(cmd, &provision_context)?;
+            tracing::info!("Running on_provision hook for issue #{}: {}", issue_number, rendered_cmd);
+            tmux.send_keys(issue_number, &rendered_cmd).await?;
+            // Small delay to let command start before next one
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+
+        // Ensure pane 0 is selected before invoking Claude (hooks may have changed focus)
+        if !config.provision.on_provision.is_empty() {
+            tmux.select_pane(issue_number, 0).await?;
+        }
+
+        // Process media in issue body
+        let issue_dir = daemon_dir.join(issue_number.to_string());
+        std::fs::create_dir_all(&issue_dir)
+            .with_context(|| format!("Failed to create issue directory: {}", issue_dir.display()))?;
+
+        // Fetch body_html for signed URLs
+        let body_html = github.get_issue_body_html(issue_number, &token).await
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to fetch body_html for issue #{}: {}. Media may not download.", issue_number, e);
+                String::new()
+            });
+
+        // Download and process media
+        let processed_body = media::process_issue_body_with_html(
+            &issue.body,
+            &body_html,
+            &issue_dir,
+            &media_client,
+        )
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("Failed to process media in issue body: {}. Using original body.", e);
+            issue.body.clone()
+        });
+
+        // Create restoration prompt
+        let restoration_prompt = format!(
+            "# Session Restoration\n\n\
+            This session was restored after interruption. Please review the issue and continue work from where it was left off.\n\n\
+            ## Issue #{}: {}\n\n\
+            {}\n\n\
+            Please assess the current state of the work in this branch and continue implementation.",
+            issue_number,
+            issue.title,
+            processed_body
+        );
+
+        // Invoke Claude with restoration prompt
+        claude.invoke(issue_number, &restoration_prompt, &daemon_dir).await?;
 
         println!("Restored session for issue #{}", issue_number);
         restored_count += 1;
