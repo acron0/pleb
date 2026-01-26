@@ -1040,11 +1040,11 @@ async fn handle_restore_command(config: Config) -> Result<()> {
     all_issues.retain(|issue| seen.insert(issue.number));
 
     if all_issues.is_empty() {
-        println!("No managed issues found to restore");
+        tracing::info!("No managed issues found to restore");
         return Ok(());
     }
 
-    println!("Checking {} managed issue(s)...", all_issues.len());
+    tracing::info!("Checking {} managed issue(s)...", all_issues.len());
 
     let mut restored_count = 0;
 
@@ -1065,7 +1065,7 @@ async fn handle_restore_command(config: Config) -> Result<()> {
         }
 
         // Either worktree or tmux window is missing, restore the session
-        println!("Restoring session for issue #{}: {}", issue_number, issue.title);
+        tracing::info!("Restoring session for issue #{}: {}", issue_number, issue.title);
 
         // Construct branch name: {issue_number}-{slug}_{username}_{suffix}
         let slug = slugify(&issue.title, 30);
@@ -1168,11 +1168,11 @@ async fn handle_restore_command(config: Config) -> Result<()> {
         // Invoke Claude with restoration prompt
         claude.invoke(issue_number, &restoration_prompt, &daemon_dir).await?;
 
-        println!("Restored session for issue #{}", issue_number);
+        tracing::info!("Restored session for issue #{}", issue_number);
         restored_count += 1;
     }
 
-    println!(
+    tracing::info!(
         "Checked {} issue(s), restored {} session(s)",
         all_issues.len(),
         restored_count
