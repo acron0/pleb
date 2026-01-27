@@ -307,6 +307,7 @@ impl TmuxManager {
 
     /// Send keys to a window (for starting Claude, etc.)
     /// Finds the window by searching for names starting with "{issue_number}-"
+    /// Sends keys to pane 0 by default
     pub async fn send_keys(&self, issue_number: u64, keys: &str) -> Result<()> {
         // Find the window name by listing windows
         let output = Command::new("tmux")
@@ -328,7 +329,8 @@ impl TmuxManager {
         for line in windows_output.lines() {
             let base_name = line.split(':').next().unwrap_or(line);
             if base_name.starts_with(&window_prefix) {
-                let target = format!("{}:{}", self.session_name, line);
+                // Target pane 0 explicitly to ensure Claude runs in the left pane
+                let target = format!("{}:{}.0", self.session_name, base_name);
                 tracing::debug!("Sending keys to {}: {}", target, keys);
                 let status = Command::new("tmux")
                     .args(["send-keys", "-t", &target, keys, "Enter"])
