@@ -41,11 +41,15 @@ impl TmuxManager {
         if !status.success() {
             // Session doesn't exist, create it
             tracing::info!("Creating tmux session: {}", self.session_name);
-            Command::new("tmux")
+            let create_status = Command::new("tmux")
                 .args(["new-session", "-d", "-s", &self.session_name])
                 .status()
                 .await
-                .context("Failed to create tmux session")?;
+                .context("Failed to execute tmux new-session command")?;
+
+            if !create_status.success() {
+                anyhow::bail!("tmux new-session command failed for session '{}': {}", self.session_name, create_status);
+            }
         }
 
         // Set environment variables for the session (always, to update existing sessions too)
@@ -54,7 +58,7 @@ impl TmuxManager {
                 "Setting tmux environment variable: {}",
                 name
             );
-            Command::new("tmux")
+            let env_status = Command::new("tmux")
                 .args([
                     "set-environment",
                     "-t",
@@ -65,11 +69,56 @@ impl TmuxManager {
                 .status()
                 .await
                 .with_context(|| {
-                    format!("Failed to set tmux environment variable: {}", name)
+                    format!("Failed to execute tmux set-environment command for variable: {}", name)
                 })?;
+
+            if !env_status.success() {
+                anyhow::bail!("tmux set-environment command failed for variable '{}': {}", name, env_status);
+            }
         }
 
         Ok(())
+    }
+
+    /// Get the next available window index in the session
+    async fn next_available_window_index(&self) -> Result<u32> {
+        let output = Command::new("tmux")
+            .args([
+                "list-windows",
+                "-t",
+                &self.session_name,
+                "-F",
+                "#{window_index}",
+            ])
+            .output()
+            .await
+            .context("Failed to list tmux windows")?;
+
+        if !output.status.success() {
+            // Session doesn't exist yet, start at index 0
+            return Ok(0);
+        }
+
+        let windows_output = String::from_utf8_lossy(&output.stdout);
+        let mut indices: Vec<u32> = windows_output
+            .lines()
+            .filter_map(|line| line.parse().ok())
+            .collect();
+
+        if indices.is_empty() {
+            return Ok(0);
+        }
+
+        indices.sort_unstable();
+
+        // Find the first gap or return max + 1
+        for (i, &index) in indices.iter().enumerate() {
+            if index != i as u32 {
+                return Ok(i as u32);
+            }
+        }
+
+        Ok(indices.len() as u32)
     }
 
     /// Create a new window for an issue in the pleb session
@@ -95,25 +144,46 @@ impl TmuxManager {
             return Ok(());
         }
 
-        // Create the window
+        // Find next available window index to avoid conflicts
+        let next_index = self.next_available_window_index().await?;
+        let target = format!("{}:{}", self.session_name, next_index);
+
+        // Create the window at a specific index
         tracing::info!(
-            "Creating tmux window {} in session {}",
+            "Creating tmux window {} at index {} in session {}",
             window_name,
+            next_index,
             self.session_name
         );
-        Command::new("tmux")
+        let output = Command::new("tmux")
             .args([
                 "new-window",
                 "-t",
-                &self.session_name,
+                &target,
                 "-n",
                 &window_name,
                 "-c",
                 &working_dir.to_string_lossy(),
             ])
-            .status()
+            .output()
             .await
-            .context("Failed to create tmux window")?;
+            .context("Failed to execute tmux new-window command")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            // If window creation failed due to index being in use, but our window exists,
+            // this is a race condition or manual window creation - just continue
+            if stderr.contains("in use") && self.window_exists(issue_number).await? {
+                tracing::debug!(
+                    "Window creation failed with 'in use' but window #{} exists, continuing",
+                    issue_number
+                );
+                return Ok(());
+            }
+
+            anyhow::bail!("Failed to create tmux window: {}", stderr.trim());
+        }
 
         Ok(())
     }
@@ -260,11 +330,15 @@ impl TmuxManager {
             if base_name.starts_with(&window_prefix) {
                 let target = format!("{}:{}", self.session_name, line);
                 tracing::debug!("Sending keys to {}: {}", target, keys);
-                Command::new("tmux")
+                let status = Command::new("tmux")
                     .args(["send-keys", "-t", &target, keys, "Enter"])
                     .status()
                     .await
-                    .context("Failed to send keys to tmux window")?;
+                    .context("Failed to execute tmux send-keys command")?;
+
+                if !status.success() {
+                    anyhow::bail!("tmux send-keys command failed for target '{}': {}", target, status);
+                }
                 return Ok(());
             }
         }
@@ -342,11 +416,15 @@ impl TmuxManager {
                 let target = format!("{}:{}:.{}", self.session_name, line, pane_index);
 
                 tracing::debug!("Selecting pane {}", target);
-                Command::new("tmux")
+                let status = Command::new("tmux")
                     .args(["select-pane", "-t", &target])
                     .status()
                     .await
-                    .context("Failed to select tmux pane")?;
+                    .context("Failed to execute tmux select-pane command")?;
+
+                if !status.success() {
+                    anyhow::bail!("tmux select-pane command failed for target '{}': {}", target, status);
+                }
                 return Ok(());
             }
         }
