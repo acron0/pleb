@@ -413,7 +413,7 @@ impl TmuxManager {
         for line in windows_output.lines() {
             let base_name = line.split(':').next().unwrap_or(line);
             if base_name.starts_with(&window_prefix) {
-                let target = format!("{}:{}:.{}", self.session_name, line, pane_index);
+                let target = format!("{}:{}.{}", self.session_name, base_name, pane_index);
 
                 tracing::debug!("Selecting pane {}", target);
                 let status = Command::new("tmux")
