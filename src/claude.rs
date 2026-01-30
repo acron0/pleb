@@ -58,6 +58,13 @@ impl ClaudeRunner {
         // Start Claude with the prompt file argument
         self.tmux.send_keys(issue_number, &claude_command).await?;
 
+        // Wait briefly for the workspace trust prompt to appear
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+        // Automatically accept the workspace trust prompt by sending Enter
+        // (which selects the default "Yes, I trust this folder" option)
+        self.tmux.send_keys(issue_number, "").await?;
+
         Ok(())
     }
 
